@@ -10,7 +10,7 @@ import { WaffoError, WaffoUnknownStatusError } from '@waffo/waffo-node';
 import * as waffoBilling from './billing/waffo.js';
 import { WaffoApiError } from './billing/waffo.js';
 import { generateReply as defaultGenerateReply, generateText as defaultGenerateText } from './llm/provider.js';
-import { PERSONAS, VOICES } from './personas.js';
+import { PERSONAS, VOICES, INTERPRETER_LANGUAGES } from './personas.js';
 import { buildInstructions } from './prompt.js';
 import { chatToolDefs, executeTool, ToolError } from './tools.js';
 import { checkUserText, ageGate, trackPartnerUsage } from './safety.js';
@@ -81,6 +81,14 @@ export function createApp({
       rewards: getRewardSummary(db, user.id),
     });
   });
+
+  // ---- 役割・声の一覧（作成画面用） ----
+  app.get('/api/personas', (c) => c.json({
+    personas: Object.fromEntries(Object.entries(PERSONAS).map(([k, p]) => [k, { label: p.label, tools: p.tools }])),
+    voices: VOICES,
+    languages: INTERPRETER_LANGUAGES,
+    voiceAvailable: Boolean(realtime),
+  }));
 
   // ---- キャラクター ----
   app.get('/api/characters', (c) => {

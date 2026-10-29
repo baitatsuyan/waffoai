@@ -1,6 +1,19 @@
 # Waffo
 
-AIキャラクターと会話できる UGC プラットフォームの MVP です。クリエイターがキャラ設定を公開し、ユーザはそのキャラと AI で会話します。収益はサブスク＋ポイント課金で、売上の一部をクリエイターに還元します。
+声で話せる AI キャラクターの UGC プラットフォームです。クリエイターがキャラを公開し、ユーザはそのキャラと声や文字で話します。
+キャラは「基本ペルソナ（役割）」×「個性」でできていて、トレーナー・資格の先生・秘書・恋人・語学パートナー・同時通訳者などの役割は、
+会話の中で予定や記録を扱う道具を持ちます。収益はサブスク＋ポイント課金で、売上の一部をクリエイターに還元します。
+
+## できること
+
+- **声で話す（リアルタイム音声）**：1対1は speech-to-speech。話している途中に話しかけると止まって聞く（割り込み）
+- **複数キャラと同時に話す**：最大4人。名前を呼んだキャラが答え、「みんな」なら全員が順番に答える。キャラごとに声が違う
+- **同時通訳**：「わたしが話す／相手が話す」を切り替えて、日本語⇄英語・中国語・韓国語などを訳して読み上げる
+- **道具（ツール）**：記憶、予定・タスク、トレーニング記録（自己ベスト）、小テストの結果、単語カード。文字でも声でも同じ道具を使う
+- **ノート**：キャラが覚えたこと・記録したことを一覧。消すとキャラも忘れる。記憶ごとに「全キャラで共有」を選べる
+- **調整**：プロンプトで性格・話し方を微修正。作成者は公開中のキャラに、ほかの人は自分用に。版の保存・戻し、調整前後の比較
+- **キャラからのメッセージ**：朝・夜のメッセージと予定30分前のお知らせ（受信箱＋Web Push）
+- **安全**：危機的な発言には相談窓口を表示、恋人ペルソナは18歳以上（生年月日）、長時間の利用には休憩をすすめる、通訳は注意書きを表示、AI音声であることを表示
 
 競合（MyChara / nyaan）の調査結果と設計の根拠は [docs/business-analysis.md](docs/business-analysis.md) を参照してください。
 
@@ -15,6 +28,7 @@ npm test
 ```
 
 API キーがなくても動きます。LLM 未設定ならモックで返答し、ログインリンクは画面に表示されます（本番では非表示）。
+音声は `OPENAI_API_KEY` を設定すると使えます。ブラウザのマイクは HTTPS か localhost でしか使えません。
 
 ## 環境変数
 
@@ -22,6 +36,9 @@ API キーがなくても動きます。LLM 未設定ならモックで返答し
 |---|---|
 | `BASE_URL` | 公開 URL（ログインリンク・決済後の戻り先・Webhook の URL） |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 互換 API。例：OpenRouter は `https://openrouter.ai/api/v1`、BytePlus ModelArk は管理画面に表示されるエンドポイント |
+| `OPENAI_API_KEY` | リアルタイム音声（OpenAI Realtime API）と声のお試し（TTS） |
+| `REALTIME_MODEL` / `TRANSCRIBE_MODEL` / `TRANSLATE_MODEL` / `TTS_MODEL` | 既定は `gpt-realtime-2.1` / `gpt-live-transcribe` / `gpt-realtime-translate` / `gpt-4o-mini-tts` |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Web Push（`npx web-push generate-vapid-keys` で作る）。なければ受信箱のみ |
 | `WAFFO_API_KEY` / `WAFFO_MERCHANT_ID` | Waffo の API キーと加盟店 ID |
 | `WAFFO_PRIVATE_KEY` | 加盟店の秘密鍵（Base64 の PKCS8 DER、または PEM）。リクエストと Webhook 応答の署名に使う |
 | `WAFFO_PUBLIC_KEY` | Waffo の公開鍵（Dashboard の Integration に表示）。Webhook の署名検証に使う |
@@ -29,6 +46,21 @@ API キーがなくても動きます。LLM 未設定ならモックで返答し
 | `ADMIN_EMAILS` | 運営用レポートを見られるメールアドレス（カンマ区切り） |
 | `DB_PATH` | SQLite ファイル（既定 `data/waffo.db`） |
 | `NODE_ENV=production` | 本番モード（ログインリンクを画面に出さない） |
+
+### リアルタイム音声のしくみ
+
+```
+1対1   マイク ──WebRTC──▶ キャラのセッション（speech-to-speech・VAD・道具）──▶ スピーカー
+グループ マイク ──▶ 耳のセッション（聞き取りのみ）── 文字 ──▶ ブラウザが答えるキャラを決める
+                                                          └─▶ キャラ A の声セッション ─▶ スピーカー
+                                                          └─▶ キャラ B の声セッション ─▶ スピーカー（順番に）
+通訳   マイク ──▶ 翻訳セッション（方向を session.update で切り替え）──▶ スピーカー
+```
+
+- ブラウザの SDP をサーバが受け取り、指示文・声・道具を付けて `/v1/realtime/calls` に送る（API キーはブラウザに渡さない）
+- 課金は分単位：開始時に1分、以後は20秒ごとのハートビートで経過分を請求。残高切れ・60分・90秒無応答で、サーバが `hangup` で切る
+- グループは参加キャラ数ぶん課金（聞き取りの耳は無料）。キャラの道具はデータチャネルの function call をサーバに転送して実行する
+- 通訳は短命のクライアントキーで翻訳セッションにつなぐ（翻訳セッションはサーバから切れないため、キーは60秒で失効）
 
 ### Waffo 決済
 
@@ -65,8 +97,20 @@ src/
   billing/plans.js    プラン枠と課金（枠 → ポイントの順）
   billing/rewards.js  クリエイター報酬と出金申請
   billing/waffo.js    Waffo 決済（注文・サブスク作成、Webhook 処理）
-  llm/provider.js     キャラ設定からプロンプトを作り、LLM を呼ぶ
-public/               依存なしのフロントエンド（SPA）と特商法表記のひな形
+  personas.js         基本ペルソナ（役割・使える道具）と声の一覧
+  prompt.js           キャラ設定・調整・記憶から指示文を組み立てる
+  tools.js            キャラが使う道具（文字・声で共通）
+  realtime.js         OpenAI Realtime への接続とセッション設定（1対1・耳・声）
+  proactive.js        キャラからのメッセージ（朝・夜・リマインド）と Web Push
+  safety.js           危機的な発言の検知、年齢確認、長時間利用の声かけ
+  routes/voice.js     音声セッション・分単位課金・切断
+  routes/companion.js 記憶・記録・調整・受信箱・通知の API
+  llm/provider.js     LLM 呼び出し（function calling 対応）
+public/
+  app.js              画面（SPA）
+  voice.js            ブラウザの音声クライアント（WebRTC）
+  talk-logic.js       誰が答えるかのルール
+  sw.js               通知用 Service Worker
 test/                 node:test によるテスト
 ```
 
@@ -77,3 +121,5 @@ test/                 node:test によるテスト
 - 通報機能とコンテンツモデレーション（決済事業者の規約への対応）
 - Waffo の本番環境：加盟店公開鍵の登録、返金・チャージバック通知 URL の設定、受け入れテスト（Waffo の Integration acceptance criteria）
 - 有償ポイントの未使用残高を監視する（資金決済法）
+- 実際のマイク・スピーカーで、遅延・割り込み・グループの順番取りを確かめる（自動テストは偽の WebRTC で画面の流れまで）
+- 年齢確認を外部サービスに置き換える（いまは自己申告の生年月日）
