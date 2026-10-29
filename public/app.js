@@ -2,6 +2,7 @@
 
 import { VoiceTalk } from './voice.js';
 import { pickResponders, stripCall } from './talk-logic.js';
+import { landingPage as renderLanding } from './landing.js';
 
 const view = document.getElementById('view');
 let me = null;
@@ -143,45 +144,8 @@ async function playSpeech({ voice, speed = 1, text }) {
 
 // ---- 画面：メインページ（ログイン前） ----
 
-async function landingPage() {
-  const demo = await api('/api/demo');
-  const demoBox = demo.characters.length ? demoPanel(demo) : null;
-  const step = (n, title, text) => h('li', {}, h('span', { class: 'step-no' }, String(n)), h('div', {}, h('b', {}, title), h('p', {}, text)));
-  return [
-    h('section', { class: 'hero' },
-      h('p', { class: 'eyebrow' }, '声で話せる、AIの相棒'),
-      h('h1', {}, 'あなただけの相棒が、', h('br'), '毎日の味方になる'),
-      h('p', {}, '勉強を見てくれる先生、予定を預かる執事、記録を見てくれるトレーナー。役割を選んで、名前と性格と声を決めるだけで、あなただけの相棒ができます。声でも文字でも話せて、話したことを覚えていて、むこうから声もかけてくれます。'),
-      h('div', { class: 'row' },
-        me.user ? h('a', { class: 'button big', href: '#/' }, 'マイページへ') : h('a', { class: 'button big', href: '#/make' }, '自分だけの相棒をつくる'),
-        demoBox && h('button', { class: 'secondary', onclick: () => document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' }) }, 'まずは話してみる')),
-      me.user
-        ? h('p', { class: 'muted small' }, 'ログイン中です。')
-        : h('p', { class: 'muted small' }, '無料ではじめられます。登録で50ptプレゼント。すでに登録済みの方は ', h('a', { href: '#/login' }, 'ログイン'), '。')),
-    demoBox && h('section', { id: 'demo', class: 'panel demo' },
-      h('h2', {}, 'まずは話してみる（登録なし）'),
-      h('p', { class: 'muted' }, 'AIボウの標準の相棒です。下のボタンを押すか、自由に話しかけてみてください。'),
-      demoBox),
-    h('h2', {}, 'AIボウでできること'),
-    h('div', { class: 'features' },
-      h('div', {}, h('h3', {}, '声で、そのまま話せる'), h('p', {}, '話している途中で話しかけても、ちゃんと止まって聞いてくれます。文字でも話せます。')),
-      h('div', {}, h('h3', {}, '本当に役に立つ'), h('p', {}, '秘書は予定を登録し、先生は苦手を記録し、トレーナーは自己ベストを覚えます。')),
-      h('div', {}, h('h3', {}, 'むこうから声をかけてくれる'), h('p', {}, '朝の段取り、予定の30分前、おやすみのひとこと。')),
-      h('div', {}, h('h3', {}, 'みんなで話せる'), h('p', {}, '執事と先生に同時に相談。名前を呼べば、その相棒が答えます。'))),
-    h('h2', {}, 'はじめかた'),
-    h('ol', { class: 'steps' },
-      step(1, '役割を選ぶ', '先生・秘書・トレーナー・恋人・語学パートナーなど。役割に合った道具が自動で付きます。'),
-      step(2, '名前・性格・声を決める', '候補から選ぶだけでも、自由に書いても。「おまかせ」で性格の文章も書けます。'),
-      step(3, '登録して、マイページで毎日使う', 'メールアドレスだけで登録できます。相棒はマイページで待っています。')),
-    h('h2', {}, 'どの相棒をつくる？'),
-    h('div', { class: 'grid roles' }, Object.entries(MAKE_ROLES).map(([k, [label, desc]]) => h('a', { class: 'card role-card', href: `#/make?persona=${k}` },
-      h('h3', {}, label), h('p', { class: 'muted' }, desc), h('span', { class: 'link' }, 'この役割でつくる →')))),
-    h('section', { class: 'panel cta' },
-      h('h2', {}, '無料プランでも、毎日使えます'),
-      h('p', { class: 'muted' }, '文字の会話は1日10回、声の会話は1日3分まで無料。もっと話したくなったら、月額プランやポイントで。'),
-      h('a', { class: 'button big', href: '#/make' }, '自分だけの相棒をつくる'),
-      !me.user && h('p', { class: 'muted small' }, 'すでに登録済みの方は ', h('a', { href: '#/login' }, 'ログイン'))),
-  ];
+function landingPage() {
+  return renderLanding({ h, put, api, me, MAKE_ROLES, VOICE_LABELS, playSpeech, demoPanel, saveDraft });
 }
 
 // メインページのお試し会話。キャラごとに会話を保ち、切り替えても続きから話せる。
@@ -631,7 +595,8 @@ const SPEECH_CHIPS = ['敬語', 'タメ口', '関西弁', '一人称は「わた
 async function makePage(id, params) {
   if (id && !me.user) { location.hash = '#/login'; return []; }
   const fresh = { persona: MAKE_ROLES[params?.get('persona')] ? params.get('persona') : 'chat', voice: 'marin', voice_speed: 1 };
-  const c = id ? (await api(`/api/characters/${id}`)).character : (!me.user && loadDraft()) || fresh;
+  // ログイン前は作りかけの下書きを、ギャラリーから来たときはテンプレートを読み込む
+  const c = id ? (await api(`/api/characters/${id}`)).character : ((!me.user || params?.get('from') === 'template') && loadDraft()) || fresh;
   if (id && c.creator_id !== me.user.id) { location.hash = `#/c/${id}`; return []; }
   let persona = c.persona;
   const roles = h('div', { class: 'grid roles' });
@@ -1235,6 +1200,7 @@ async function route() {
     else if (parts[0] === 'edit') { location.replace(`#/creator/edit/${parts[1]}`); return; }
     else if (parts[0] === 'login') content = me.user ? (location.replace('#/'), []) : loginPage();
     else content = h('p', {}, 'ページが見つかりません');
+    document.body.classList.toggle('is-landing', !me.user && parts.length === 0 || parts[0] === 'about');
     put(view, ...[content].flat(Infinity).filter((x) => x != null && x !== false));
     window.scrollTo(0, 0); // ページが変わったら先頭から
   } catch (err) {
