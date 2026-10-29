@@ -163,3 +163,9 @@ button.card.pick { text-align: left; color: var(--text); background: var(--surfa
 button.card.pick[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 button.card.pick p { margin: 6px 0 0; color: var(--muted); font-size: .9rem; }
 .muted-panel { background: transparent; }
+
+/* 自分だけの相棒をつくる */
+.grid.roles { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.grid.roles button.card.pick { padding: 10px 12px; }
+.grid.roles h3 { font-size: .98rem; }
+p.small { font-size: .85rem; margin: 2px 0 4px; }

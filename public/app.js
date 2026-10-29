@@ -1,6 +1,7 @@
 // 依存なしの小さな SPA。ハッシュでルーティングし、DOM は h() で組み立てる（innerHTML は使わない）。
 
 import { VoiceTalk } from './voice.js';
+import { pickResponders, stripCall } from './talk-logic.js';
 
 const view = document.getElementById('view');
 let me = null;
@@ -99,7 +100,7 @@ async function discoverPage(params) {
   const community = characters.filter((c) => !c.official);
   return [
     h('h1', {}, 'さがす'),
-    h('p', { class: 'muted' }, '気に入った相手を「相棒」にすると、ホームからすぐ話せます。'),
+    h('p', { class: 'muted' }, '気に入った相手を「相棒」にすると、ホームからすぐ話せます。ぴったりの相手がいなければ、', h('a', { href: '#/make' }, '自分だけの相棒をつくる'), 'こともできます。'),
     h('div', { class: 'row' }, search,
       h('button', { class: sort === 'popular' ? '' : 'secondary', onclick: () => go('popular') }, '人気'),
       h('button', { class: sort === 'new' ? '' : 'secondary', onclick: () => go('new') }, '新着')),
@@ -181,7 +182,7 @@ async function homePage() {
           h('span', {}, r.type === 'event' ? r.data.title : `タスク：${r.data.title}`),
           h('span', { class: 'muted' }, `（${r.character_name}）`))))
         : h('p', { class: 'muted' }, '予定やタスクはありません。秘書に「明日10時に歯医者」と話しかけると登録されます。')),
-    h('div', { class: 'row spread' }, h('h2', {}, 'わたしの相棒'), h('a', { href: '#/discover' }, '相棒をさがす')),
+    h('div', { class: 'row spread' }, h('h2', {}, 'わたしの相棒'), h('span', {}, h('a', { href: '#/make' }, '＋ つくる'), '　', h('a', { href: '#/discover' }, 'さがす'))),
     h('div', { class: 'grid' }, companions.map((c) => h('div', { class: 'card companion' },
       h('a', { class: 'card-head', href: `#/c/${c.id}` }, h('span', { class: `avatar p-${c.persona}` }, initial(c.name)),
         h('div', {}, h('h3', {}, c.name, c.unread ? h('span', { class: 'badge' }, String(c.unread)) : null), h('div', { class: 'tags' }, personaLabel(c)))),
@@ -218,6 +219,10 @@ async function onboardingPage() {
       h('p', { class: 'muted' }, 'あとから何人でも増やせます。相棒はあなたの予定や好きなものを覚えて、話すほど合ってきます。')),
     grid, msg,
     h('p', {}, h('button', { class: 'big', onclick: (e) => start(e.currentTarget) }, 'この相棒ではじめる')),
+    h('section', { class: 'panel' },
+      h('h2', {}, '自分だけの相棒をつくる'),
+      h('p', { class: 'muted' }, '役割（秘書・トレーナー・恋人など）を選んで、名前・性格・話し方・声を決められます。あなただけが話せる相棒です。'),
+      h('a', { class: 'button secondary', href: '#/make' }, 'つくってみる')),
   ];
 }
 
@@ -255,7 +260,9 @@ async function characterPage(id) {
         : h('a', { class: 'button big', href: '#/login' }, 'はじめる'),
       me.user && c.persona !== 'interpreter' && h('button', { class: 'secondary', onclick: startChat }, '文字で話す'),
       me.user && h('button', { class: 'secondary', onclick: toggleCompanion }, c.companion ? '相棒から外す' : '相棒にする'),
-      isOwner && h('a', { class: 'button secondary', href: `#/creator/edit/${c.id}` }, 'クリエイター画面で編集')),
+      isOwner && (c.visibility === 'private'
+        ? h('a', { class: 'button secondary', href: `#/make/${c.id}` }, '名前・性格・声を変える')
+        : h('a', { class: 'button secondary', href: `#/creator/edit/${c.id}` }, 'クリエイター画面で編集'))),
     msg,
     c.persona === 'other' && c.role && [h('h2', {}, '役割'), h('div', { class: 'section' }, c.role)],
     c.world_setting && [h('h2', {}, '基本設定'), h('div', { class: 'section' }, c.world_setting)],
@@ -398,8 +405,6 @@ async function editPage(id) {
     world_setting: h('textarea', { maxlength: 4000, placeholder: '舞台、ユーザの立場、物語の前提' }),
     profile: h('textarea', { maxlength: 4000, placeholder: '年齢、口調、一人称、性格、ユーザとの距離感' }),
     opening: h('textarea', { maxlength: 2000, placeholder: '最初のひとこと' }),
-    voice: h('select', {}, meta.voices.map((v) => h('option', { value: v, selected: c.voice === v }, v))),
-    voice_speed: h('input', { type: 'range', min: '0.7', max: '1.3', step: '0.05', value: String(c.voice_speed ?? 1) }),
     tags: h('input', { value: c.tags ?? '', maxlength: 200, placeholder: 'ファンタジー, 幼なじみ' }),
     visibility: h('select', {}, ['public', 'unlisted', 'private'].map((v) =>
       h('option', { value: v, selected: c.visibility === v }, { public: '公開', unlisted: '限定公開（URLを知る人だけ）', private: '非公開' }[v]))),
@@ -416,25 +421,10 @@ async function editPage(id) {
   };
   fields.persona.addEventListener('change', updatePersona);
   updatePersona();
-  const speedLabel = h('span', { class: 'muted' });
-  const updateSpeed = () => { speedLabel.textContent = ` ${Number(fields.voice_speed.value).toFixed(2)}倍`; };
-  fields.voice_speed.addEventListener('input', updateSpeed);
-  updateSpeed();
-  const voiceMsg = h('span', { class: 'muted' });
-  const preview = async () => {
-    voiceMsg.textContent = '再生の準備中…';
-    const res = await fetch('/api/voice/preview', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ voice: fields.voice.value, speed: Number(fields.voice_speed.value), text: fields.opening.value || undefined }),
-    });
-    if (!res.ok) { voiceMsg.textContent = (await res.json().catch(() => ({}))).error ?? '再生できませんでした'; return; }
-    voiceMsg.textContent = 'AIが生成した音声です';
-    new Audio(URL.createObjectURL(await res.blob())).play();
-  };
+  const voice = voiceFields(c, () => fields.opening.value);
   const msg = h('p');
   const save = async () => {
-    const body = Object.fromEntries(Object.entries(fields).map(([k, el]) => [k, el.value]));
-    body.voice_speed = Number(body.voice_speed);
+    const body = { ...Object.fromEntries(Object.entries(fields).map(([k, el]) => [k, el.value])), ...voice.values() };
     try {
       const r = id ? await api(`/api/characters/${id}`, { method: 'PUT', body }) : await api('/api/characters', { method: 'POST', body });
       location.hash = id ? '#/creator' : `#/creator/edit/${r.id}`;
@@ -451,14 +441,126 @@ async function editPage(id) {
     field('基本設定（舞台・ユーザの立場）', fields.world_setting),
     field('プロフィール（性格・口調）', fields.profile),
     field('最初のひとこと', fields.opening),
-    h('label', {}, '声'),
-    h('div', { class: 'row' }, h('div', { style: 'flex:1' }, fields.voice), h('button', { class: 'secondary', onclick: preview }, '試しに聞く'), voiceMsg),
-    h('label', {}, '話す速さ', speedLabel), fields.voice_speed,
+    voice.nodes,
     field('タグ（カンマ区切り）', fields.tags),
     field('公開範囲', fields.visibility),
     msg,
     h('p', {}, h('button', { onclick: save }, '保存'), ' ', id && h('a', { class: 'button secondary', href: `#/c/${id}` }, '公開ページを見る')),
     id && c.persona !== 'interpreter' && await tweakCard(c, 'creator'),
+  ];
+}
+
+// 声と話す速さの入力欄（試しに聞くボタン付き）。キャラづくりの画面で共通。
+function voiceFields(c, sampleText) {
+  const voice = h('select', {}, meta.voices.map((v) => h('option', { value: v, selected: c.voice === v }, v)));
+  const speed = h('input', { type: 'range', min: '0.7', max: '1.3', step: '0.05', value: String(c.voice_speed ?? 1) });
+  const speedLabel = h('span', { class: 'muted' });
+  const updateSpeed = () => { speedLabel.textContent = ` ${Number(speed.value).toFixed(2)}倍`; };
+  speed.addEventListener('input', updateSpeed);
+  updateSpeed();
+  const voiceMsg = h('span', { class: 'muted' });
+  const preview = async () => {
+    voiceMsg.textContent = '再生の準備中…';
+    const res = await fetch('/api/voice/preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ voice: voice.value, speed: Number(speed.value), text: sampleText() || undefined }),
+    });
+    if (!res.ok) { voiceMsg.textContent = (await res.json().catch(() => ({}))).error ?? '再生できませんでした'; return; }
+    voiceMsg.textContent = 'AIが生成した音声です';
+    new Audio(URL.createObjectURL(await res.blob())).play();
+  };
+  return {
+    values: () => ({ voice: voice.value, voice_speed: Number(speed.value) }),
+    nodes: [
+      h('label', {}, '声'),
+      h('div', { class: 'row' }, h('div', { style: 'flex:1' }, voice), h('button', { class: 'secondary', onclick: preview }, '試しに聞く'), voiceMsg),
+      h('label', {}, '話す速さ', speedLabel), speed,
+    ],
+  };
+}
+
+// ---- 画面：自分だけの相棒をつくる（一般ユーザー向け。非公開で作り、そのまま相棒に加える） ----
+
+const MAKE_ROLES = {
+  chat: ['話し相手', '雑談や相談の相手。あなたの話を覚えています'],
+  trainer: ['トレーナー', 'メニュー作りとトレーニングの記録'],
+  tutor: ['勉強の先生', '学習計画・確認問題・苦手の把握'],
+  secretary: ['秘書', '予定とタスクを登録して、朝に段取りを伝える'],
+  partner: ['恋人', '好きなものや予定を覚えて、朝夜にメッセージ（18歳以上）'],
+  language: ['語学パートナー', '英会話の相手。間違いを直して単語カードに'],
+  interpreter: ['通訳', '話した言葉をその場で訳して読み上げる'],
+  other: ['その他', '役割を自分で決める'],
+};
+const PERSONALITY_CHIPS = ['やさしい', '明るい', 'クール', '落ち着いている', 'ちょっと厳しめ', '甘えん坊', 'おっとり', '面倒見がいい', 'ユーモアがある'];
+const SPEECH_CHIPS = ['敬語', 'タメ口', '関西弁', '一人称は「わたし」', '一人称は「僕」', '一人称は「俺」', '返事は短め'];
+
+async function makePage(id) {
+  if (!me.user) { location.hash = '#/login'; return []; }
+  const c = id ? (await api(`/api/characters/${id}`)).character : { persona: 'chat', voice: 'marin', voice_speed: 1 };
+  if (id && c.creator_id !== me.user.id) { location.hash = `#/c/${id}`; return []; }
+  let persona = c.persona;
+  const roles = h('div', { class: 'grid roles' });
+  const role = h('textarea', { maxlength: 400, placeholder: '例：旅行プランナー。予算と日数を聞いて、移動時間まで考えた行程を一緒に作る' });
+  role.value = c.role ?? '';
+  const roleWrap = h('div', {}, h('label', {}, '何を手伝ってもらう？'), role);
+  const renderRoles = () => {
+    put(roles, Object.entries(MAKE_ROLES).map(([k, [label, desc]]) => h('button', {
+      class: 'card pick', 'aria-pressed': persona === k ? 'true' : 'false',
+      onclick: () => { persona = k; renderRoles(); },
+    }, h('h3', {}, label), h('p', { class: 'muted' }, desc))));
+    roleWrap.hidden = persona !== 'other';
+  };
+  renderRoles();
+  const name = h('input', { value: c.name ?? '', maxlength: 50, placeholder: '例：ハル' });
+  const profile = h('textarea', { maxlength: 4000, placeholder: '例：28歳。明るくて面倒見がいい。タメ口で話す。落ち込んでいると気づいて声をかけてくれる' });
+  profile.value = c.profile ?? '';
+  const relation = h('textarea', { maxlength: 4000, placeholder: '例：わたしのことは「ゆうちゃん」と呼ぶ。大学時代からの友だちという設定' });
+  relation.value = c.world_setting ?? '';
+  const opening = h('textarea', { maxlength: 2000, placeholder: '例：おかえり！今日はどんな一日だった？' });
+  opening.value = c.opening ?? '';
+  const addChip = (text) => {
+    profile.value = profile.value.trim() ? `${profile.value.trim()}。${text}` : text;
+    profile.focus();
+  };
+  const chips = (list) => h('div', { class: 'chips' }, list.map((t) => h('button', { class: 'chip-btn', onclick: () => addChip(t) }, `＋${t}`)));
+  const voice = voiceFields(c, () => opening.value);
+  const msg = h('p');
+  const save = async (btn) => {
+    btn.disabled = true;
+    const body = {
+      name: name.value, persona, role: role.value, profile: profile.value, world_setting: relation.value, opening: opening.value,
+      tagline: c.tagline || `わたしだけの${MAKE_ROLES[persona][0]}`, tags: c.tags ?? '', visibility: c.visibility ?? 'private',
+      ...voice.values(),
+    };
+    try {
+      if (id) {
+        await api(`/api/characters/${id}`, { method: 'PUT', body });
+        location.hash = `#/c/${id}`;
+      } else {
+        const r = await api('/api/characters', { method: 'POST', body });
+        await api('/api/companions', { method: 'POST', body: { characterId: r.id } });
+        location.hash = `#/talk?ids=${r.id}`;
+      }
+    } catch (err) {
+      btn.disabled = false;
+      put(msg, h('span', { class: 'error' }, err.message));
+    }
+  };
+  const field = (label, el, note) => [h('label', {}, label), note && h('p', { class: 'muted small' }, note), el];
+  return [
+    h('h1', {}, id ? `${c.name}を変える` : '自分だけの相棒をつくる'),
+    h('p', { class: 'muted' }, 'あなただけが話せる相棒です（ほかの人には見えません）。役割を選ぶと、予定・記録・単語カードなどの道具が自動で付きます。'),
+    h('h2', {}, '1. 役割'), roles, roleWrap,
+    h('h2', {}, '2. 名前と性格'),
+    field('名前', name),
+    field('性格・話し方', profile, '下のボタンで足すか、自由に書いてください。'),
+    chips(PERSONALITY_CHIPS), chips(SPEECH_CHIPS),
+    field('あなたとの関係・呼び方（なくてもOK）', relation),
+    field('最初のひとこと（なくてもOK）', opening),
+    h('h2', {}, '3. 声'), voice.nodes,
+    msg,
+    h('p', {}, h('button', { class: 'big', onclick: (e) => save(e.currentTarget) }, id ? '保存する' : 'この相棒と話してみる'),
+      ' ', id && h('a', { class: 'button secondary', href: `#/c/${id}` }, 'やめる')),
   ];
 }
 
@@ -526,6 +628,55 @@ async function talkPage(params) {
   };
 
   const TOOL_LABEL = { remember: '覚えました', add_event: '予定を登録しました', add_task: 'タスクを登録しました', complete_task: 'タスクを完了にしました', log_workout: 'トレーニングを記録しました', record_quiz: '結果を記録しました', add_flashcard: '単語カードに追加しました' };
+
+  // 通話していないときは文字で話す。誰が答えるかは声のときと同じルール（名前を呼ぶ／みんな／直前の相手）。
+  const conversations = new Map(); // キャラ id → 会話 id
+  let lastSpeaker = null;
+  let chatting = false;
+  let draft = ''; // 送れなかった文は入力欄に戻す
+  const sendChat = async (text) => {
+    if (chatting) return;
+    chatting = true;
+    renderControls();
+    const group = members();
+    addLine('user', text);
+    try {
+      for (const c of pickResponders(text, group, lastSpeaker)) {
+        if (!conversations.has(c.id)) {
+          conversations.set(c.id, (await api(`/api/characters/${c.id}/conversations/latest`, { method: 'POST' })).id);
+        }
+        const content = group.length > 1 ? stripCall(text, c) : text;
+        const r = await api(`/api/conversations/${conversations.get(c.id)}/messages`, { method: 'POST', body: { content } });
+        for (const e of r.toolEvents) if (e.ok && TOOL_LABEL[e.name]) log.append(h('div', { class: 'line event' }, `${c.name}が${TOOL_LABEL[e.name]}`));
+        addLine('assistant', r.message.content, c.id);
+        for (const n of r.notices) notices.prepend(noticeBox(n));
+        lastSpeaker = c.id;
+      }
+      await refreshMe();
+      usage.textContent = usageLine();
+    } catch (err) {
+      if (err.data?.code === 'age_required') put(notices, birthDateForm(() => sendChat(text)));
+      else put(notices, noticeBox({ kind: 'error', message: err.message }), err.status === 402 ? h('a', { href: '#/billing' }, 'プラン・ポイントを見る') : null);
+      draft = text;
+    } finally {
+      chatting = false;
+      renderControls();
+      controls.querySelector('.composer input')?.focus({ preventScroll: true }); // 続けて打てるように
+    }
+  };
+  const chatComposer = () => {
+    const input = h('input', { placeholder: members().length > 1 ? '文字で話す（名前を呼ぶとその相棒が答えます）' : '文字で話す', maxlength: 2000, disabled: chatting, value: draft });
+    draft = '';
+    const send = () => {
+      const text = input.value.trim();
+      if (!text || chatting) return;
+      input.value = '';
+      sendChat(text);
+    };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) send(); });
+    return h('div', { class: 'composer' }, input, h('button', { disabled: chatting, onclick: send }, chatting ? '返事を待っています…' : '送信'));
+  };
+
   const onUpdate = (e) => {
     if (e.type === 'line') addLine(e.role, e.text, e.id);
     else if (e.type === 'caption') { const o = orbs.get(e.id); if (o) o.caption.textContent = e.text; }
@@ -578,11 +729,13 @@ async function talkPage(params) {
   const renderControls = () => {
     const live = currentTalk && !currentTalk.ended;
     if (!live) {
+      const canChat = members().length > 0 && modeOf() !== 'interpret';
       put(controls, 
-        h('button', { class: 'big talk-start', disabled: !members().length || !meta.voiceAvailable, onclick: (e) => start(e.currentTarget) },
-          modeOf() === 'interpret' ? '通訳をはじめる' : '話しはじめる'),
-        !meta.voiceAvailable && h('p', { class: 'muted' }, '音声は準備中です（運営が OPENAI_API_KEY を設定すると使えます）。キャラのページから文字で話せます。'),
-        members().length > 1 && h('p', { class: 'muted' }, '名前を呼ぶとそのキャラが答えます。「みんな」と呼べば全員が順番に答えます。話している途中で話しかけると、止まって聞いてくれます。'));
+        h('button', { class: 'big talk-start', disabled: !members().length || !meta.voiceAvailable || chatting, onclick: (e) => start(e.currentTarget) },
+          modeOf() === 'interpret' ? '通訳をはじめる' : '声で話しはじめる'),
+        !meta.voiceAvailable && h('p', { class: 'muted' }, '音声は準備中です。下の入力欄から文字で話せます。'),
+        members().length > 1 && h('p', { class: 'muted' }, '名前を呼ぶとそのキャラが答えます。「みんな」と呼べば全員が順番に答えます。声で話している途中で話しかけると、止まって聞いてくれます。'),
+        canChat && chatComposer());
       return;
     }
     const text = h('input', { placeholder: '文字で話しかけることもできます', maxlength: 500 });
@@ -773,7 +926,7 @@ async function settingsPage() {
           h('button', { class: 'secondary small', onclick: async () => { await api(`/api/companions/${c.id}`, { method: 'DELETE' }); route(); } }, '相棒から外す'))))
         : h('p', { class: 'muted' }, 'まだいません。'),
       h('p', { class: 'muted' }, '外しても、会話や覚えていることは残ります。また相棒にすれば続きから話せます。'),
-      h('a', { href: '#/discover' }, '相棒をさがす')),
+      h('p', {}, h('a', { href: '#/make' }, '自分だけの相棒をつくる'), '　', h('a', { href: '#/discover' }, '相棒をさがす'))),
     h('section', { class: 'panel' },
       h('h2', {}, 'お知らせ'),
       h('p', { class: 'muted' }, '相棒からの朝・夜のメッセージは、各キャラのページでオン・オフできます。'),
@@ -854,6 +1007,7 @@ async function route() {
     else if (parts[0] === 'inbox') content = await inboxPage();
     else if (parts[0] === 'billing') content = await billingPage(params);
     else if (parts[0] === 'settings') content = await settingsPage();
+    else if (parts[0] === 'make') content = await makePage(parts[1] ?? null);
     else if (parts[0] === 'creator' && parts[1] === 'new') content = await editPage(null);
     else if (parts[0] === 'creator' && parts[1] === 'edit') content = await editPage(parts[2]);
     else if (parts[0] === 'creator') content = await creatorPage();
