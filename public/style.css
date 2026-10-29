@@ -36,7 +36,7 @@ h2 { font-size: 1.15rem; margin: 24px 0 8px; }
 .card h3 { margin: 0 0 4px; font-size: 1.05rem; }
 .tags { font-size: .8rem; color: var(--muted); }
 button, .button { white-space: nowrap; background: var(--accent); color: var(--accent-text); border: 0; border-radius: 999px; padding: 8px 18px; font: inherit; cursor: pointer; text-decoration: none; display: inline-block; }
-button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+button.secondary, .button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
 button:disabled { opacity: .5; cursor: default; }
 input, textarea, select { width: 100%; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
 textarea { min-height: 90px; resize: vertical; }
@@ -140,3 +140,26 @@ button.danger { background: var(--danger); }
 .member[aria-pressed="true"] { border-color: var(--accent); font-weight: 700; box-shadow: 0 0 0 1px var(--accent) inset; }
 @media (prefers-reduced-motion: reduce) { .orb, .me-orb { transition: none; transform: none; } }
 @media (max-width: 480px) { .seat { width: 120px; } .orb { width: 76px; height: 76px; font-size: 1.6rem; } }
+
+/* ---- 一般ユーザー向けの構成：ナビ・ホーム ---- */
+.nav-links { display: flex; gap: 14px; flex-wrap: wrap; }
+.nav-links a[aria-current="page"] { color: var(--accent); font-weight: 700; }
+.greeting { padding: 14px 0 6px; display: grid; gap: 8px; }
+.greeting h1 { font-size: 1.7rem; margin: 0; }
+.greeting p { margin: 0; }
+.features { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 20px 0; }
+.features > div { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+.features h3 { margin: 0 0 4px; font-size: 1rem; }
+.features p { margin: 0; color: var(--muted); font-size: .9rem; }
+.card.companion { display: grid; gap: 8px; align-content: start; }
+.card.companion .card-head { text-decoration: none; color: inherit; }
+.card.companion h3 { display: flex; align-items: center; gap: 4px; }
+.card .last { margin: 0; color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
+.messages { display: grid; gap: 6px; }
+.message { display: block; text-decoration: none; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); overflow-wrap: anywhere; }
+.message.unread { border-color: var(--accent); }
+.when { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 7.5em; }
+button.card.pick { text-align: left; color: var(--text); background: var(--surface); border: 2px solid var(--border); border-radius: 12px; white-space: normal; padding: 14px; }
+button.card.pick[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+button.card.pick p { margin: 6px 0 0; color: var(--muted); font-size: .9rem; }
+.muted-panel { background: transparent; }

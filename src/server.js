@@ -7,8 +7,10 @@ import { createRealtimeClient } from './realtime.js';
 import { generateText } from './llm/provider.js';
 import { runProactive, setupPush } from './proactive.js';
 import { sweepVoiceSessions } from './routes/voice.js';
+import { ensureOfficialCharacters } from './seed.js';
 
 const db = openDb(env.dbPath);
+ensureOfficialCharacters(db);
 const waffo = createWaffoClient();
 const realtime = createRealtimeClient();
 const pushReady = setupPush();

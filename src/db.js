@@ -241,6 +241,15 @@ CREATE TABLE IF NOT EXISTS safety_events (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- ユーザが「相棒」として手元に置いているキャラ。ホームとトークの相手の一覧になる。
+CREATE TABLE IF NOT EXISTS user_companions (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  character_id INTEGER NOT NULL REFERENCES characters(id),
+  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_used_at TEXT,
+  PRIMARY KEY (user_id, character_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, character_id);
 CREATE INDEX IF NOT EXISTS idx_records_user ON records(user_id, character_id, type);
 CREATE INDEX IF NOT EXISTS idx_inbox_user ON inbox(user_id, read_at);

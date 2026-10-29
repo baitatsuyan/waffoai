@@ -40,16 +40,18 @@ const initial = (name) => [...name][0] ?? '?';
 async function refreshMe() {
   me = await api('/api/me');
   meta ??= await api('/api/personas');
+  const nav = document.getElementById('nav-links');
   const acc = document.getElementById('account');
+  const here = location.hash.split('?')[0] || '#/';
+  const link = (href, label) => h('a', { href, 'aria-current': here === href ? 'page' : false }, label);
   if (!me.user) {
-    put(acc, h('a', { href: '#/login' }, 'ログイン'));
+    put(nav, link('#/discover', 'さがす'));
+    put(acc, h('a', { class: 'button small', href: '#/login' }, 'はじめる'));
     return;
   }
+  put(nav, link('#/', 'ホーム'), link('#/discover', 'さがす'), link('#/talk', 'トーク'), link('#/notes', 'ノート'), link('#/settings', '設定'));
   const inbox = await api('/api/inbox').catch(() => ({ unread: 0 }));
-  put(acc, 
-    h('a', { href: '#/inbox' }, '受信箱', inbox.unread ? h('span', { class: 'badge' }, String(inbox.unread)) : null), ' ',
-    h('a', { href: '#/me' }, `${me.points.total}pt`), ' ',
-    h('button', { class: 'secondary', onclick: async () => { await api('/auth/logout', { method: 'POST' }); await route(); } }, 'ログアウト'));
+  put(acc, h('a', { href: '#/inbox', 'aria-label': `お知らせ ${inbox.unread}件` }, 'お知らせ', inbox.unread ? h('span', { class: 'badge' }, String(inbox.unread)) : null));
 }
 
 function usageLine() {
@@ -81,32 +83,141 @@ function birthDateForm(onDone) {
 
 // ---- 画面：さがす ----
 
-async function homePage(params) {
+const characterCard = (c) => h('a', { class: 'card', href: `#/c/${c.id}` },
+  h('div', { class: 'card-head' }, h('span', { class: `avatar p-${c.persona}` }, initial(c.name)), h('h3', {}, c.name)),
+  h('div', {}, c.tagline),
+  h('div', { class: 'tags' }, c.persona !== 'chat' && h('span', { class: 'chip' }, personaLabel(c)), ` ${c.official ? '公式' : `by ${c.creator}`}`));
+
+async function discoverPage(params) {
   const q = params.get('q') ?? '';
   const sort = params.get('sort') ?? 'popular';
   const { characters } = await api(`/api/characters?sort=${sort}&q=${encodeURIComponent(q)}`);
   const search = h('input', { placeholder: 'キャラ名・タグで検索', value: q });
-  const go = (s) => { location.hash = `#/?q=${encodeURIComponent(search.value)}&sort=${s}`; };
+  const go = (s) => { location.hash = `#/discover?q=${encodeURIComponent(search.value)}&sort=${s}`; };
   search.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(sort); });
-  const companions = characters.filter((c) => c.persona !== 'chat');
-  const others = characters.filter((c) => c.persona === 'chat');
-  const card = (c) => h('a', { class: 'card', href: `#/c/${c.id}` },
-    h('div', { class: 'card-head' }, h('span', { class: `avatar p-${c.persona}` }, initial(c.name)), h('h3', {}, c.name)),
-    h('div', {}, c.tagline),
-    h('div', { class: 'tags' }, c.persona !== 'chat' && h('span', { class: 'chip' }, personaLabel(c)), ` ${c.tags} ・ 会話 ${c.chat_count} ・ by ${c.creator}`));
+  const official = characters.filter((c) => c.official);
+  const community = characters.filter((c) => !c.official);
   return [
-    h('section', { class: 'hero' },
-      h('h1', {}, '話せる相手が、毎日の味方になる'),
-      h('p', {}, '声で話しかけるだけ。予定を覚える秘書、記録を見てくれるトレーナー、あなたを覚えている恋人まで。何人とでも、同時に話せます。'),
-      me.user && h('a', { class: 'button big', href: '#/talk' }, '声で話してみる')),
+    h('h1', {}, 'さがす'),
+    h('p', { class: 'muted' }, '気に入った相手を「相棒」にすると、ホームからすぐ話せます。'),
     h('div', { class: 'row' }, search,
       h('button', { class: sort === 'popular' ? '' : 'secondary', onclick: () => go('popular') }, '人気'),
       h('button', { class: sort === 'new' ? '' : 'secondary', onclick: () => go('new') }, '新着')),
-    companions.length > 0 && [h('h2', {}, 'くらしのパートナー'), h('div', { class: 'grid' }, companions.map(card))],
-    h('h2', {}, q ? `「${q}」の検索結果` : '会話キャラ'),
-    others.length || companions.length
-      ? h('div', { class: 'grid' }, others.map(card))
-      : h('p', { class: 'muted' }, 'まだキャラがありません。「つくる」から最初のキャラを公開してみましょう。'),
+    official.length > 0 && [h('h2', {}, '公式の相棒'), h('div', { class: 'grid' }, official.map(characterCard))],
+    community.length > 0 && [h('h2', {}, 'みんなのキャラ'), h('div', { class: 'grid' }, community.map(characterCard))],
+    !characters.length && h('p', { class: 'muted' }, q ? `「${q}」に一致するキャラはいません。` : 'まだキャラがありません。'),
+  ];
+}
+
+// ---- 画面：はじめての人（ログイン前） ----
+
+async function landingPage() {
+  const { characters } = await api('/api/characters?sort=popular');
+  const official = characters.filter((c) => c.official);
+  return [
+    h('section', { class: 'hero' },
+      h('h1', {}, '話せる相手が、毎日の味方になる'),
+      h('p', {}, '声で話しかけるだけ。予定を覚えておく秘書、記録を見てくれるトレーナー、試験まで伴走する先生、あなたを覚えている恋人。何人とでも、同時に話せます。'),
+      h('div', { class: 'row' }, h('a', { class: 'button big', href: '#/login' }, '無料ではじめる'), h('a', { class: 'button secondary', href: '#/discover' }, '相棒を見てみる'))),
+    h('div', { class: 'features' },
+      h('div', {}, h('h3', {}, '声で、そのまま話せる'), h('p', {}, '話している途中で話しかけても、ちゃんと止まって聞いてくれます。')),
+      h('div', {}, h('h3', {}, '覚えていてくれる'), h('p', {}, '好きなもの、予定、トレーニングの記録。話すほど、あなたに合ってきます。')),
+      h('div', {}, h('h3', {}, 'むこうから声をかけてくれる'), h('p', {}, '朝の段取り、予定の30分前、おやすみのひとこと。')),
+      h('div', {}, h('h3', {}, 'みんなで話せる'), h('p', {}, '秘書とトレーナーに同時に相談。名前を呼べば、その人が答えます。'))),
+    official.length > 0 && [h('h2', {}, '公式の相棒'), h('div', { class: 'grid' }, official.map(characterCard))],
+  ];
+}
+
+// ---- 画面：ホーム（わたしの相棒） ----
+
+const WEEKDAY = '日月火水木金土';
+const jstDate = (d = new Date()) => new Date(d.getTime() + 9 * 3600_000);
+const whenLabel = (dueAt) => {
+  const d = jstDate(new Date(`${dueAt.replace(' ', 'T')}Z`));
+  const today = jstDate().toISOString().slice(0, 10);
+  const tomorrow = jstDate(new Date(Date.now() + 86400_000)).toISOString().slice(0, 10);
+  const day = d.toISOString().slice(0, 10);
+  const label = day === today ? '今日' : day === tomorrow ? '明日' : `${d.getUTCMonth() + 1}/${d.getUTCDate()}（${WEEKDAY[d.getUTCDay()]}）`;
+  return `${label} ${d.toISOString().slice(11, 16)}`;
+};
+
+async function homePage() {
+  if (!me.user) return landingPage();
+  const home = await api('/api/home');
+  if (!home.companions.length) return onboardingPage();
+  const greet = (() => {
+    const hour = jstDate().getUTCHours();
+    return hour < 5 ? 'こんばんは' : hour < 11 ? 'おはようございます' : hour < 18 ? 'こんにちは' : 'こんばんは';
+  })();
+  const d = jstDate();
+  const companions = home.companions;
+  const startChat = async (c, btn) => {
+    btn.disabled = true;
+    try {
+      const { id } = await api(`/api/characters/${c.id}/conversations/latest`, { method: 'POST' });
+      location.hash = `#/chat/${id}`;
+    } catch (err) {
+      btn.disabled = false;
+      location.hash = `#/c/${c.id}`;
+    }
+  };
+  const talkable = companions.filter((c) => c.persona !== 'interpreter');
+  return [
+    h('section', { class: 'greeting' },
+      h('p', { class: 'muted' }, `${d.getUTCMonth() + 1}月${d.getUTCDate()}日（${WEEKDAY[d.getUTCDay()]}）`),
+      h('h1', {}, `${greet}`),
+      h('div', { class: 'row' },
+        talkable[0] && h('a', { class: 'button big', href: `#/talk?ids=${talkable[0].id}` }, `${talkable[0].name}に話しかける`),
+        talkable.length > 1 && h('a', { class: 'button secondary', href: `#/talk?ids=${talkable.slice(0, 4).map((c) => c.id).join(',')}` }, 'みんなで話す'))),
+    home.inbox.latest.length > 0 && h('section', { class: 'panel' },
+      h('div', { class: 'row spread' }, h('h2', {}, '届いたメッセージ'), h('a', { href: '#/inbox' }, `すべて見る${home.inbox.unread ? `（未読 ${home.inbox.unread}）` : ''}`)),
+      h('div', { class: 'messages' }, home.inbox.latest.map((m) => h('a', { class: `message${m.read_at ? '' : ' unread'}`, href: '#/inbox' },
+        h('b', {}, m.character_name), ' ', m.text)))),
+    h('section', { class: 'panel' },
+      h('div', { class: 'row spread' }, h('h2', {}, '今日と明日'), h('a', { href: '#/notes?tab=event' }, 'ノートを見る')),
+      home.upcoming.length
+        ? h('ul', { class: 'list' }, home.upcoming.map((r) => h('li', {},
+          h('span', { class: 'when' }, r.type === 'event' ? whenLabel(r.due_at) : `${r.data.due_date ?? ''}まで`),
+          h('span', {}, r.type === 'event' ? r.data.title : `タスク：${r.data.title}`),
+          h('span', { class: 'muted' }, `（${r.character_name}）`))))
+        : h('p', { class: 'muted' }, '予定やタスクはありません。秘書に「明日10時に歯医者」と話しかけると登録されます。')),
+    h('div', { class: 'row spread' }, h('h2', {}, 'わたしの相棒'), h('a', { href: '#/discover' }, '相棒をさがす')),
+    h('div', { class: 'grid' }, companions.map((c) => h('div', { class: 'card companion' },
+      h('a', { class: 'card-head', href: `#/c/${c.id}` }, h('span', { class: `avatar p-${c.persona}` }, initial(c.name)),
+        h('div', {}, h('h3', {}, c.name, c.unread ? h('span', { class: 'badge' }, String(c.unread)) : null), h('div', { class: 'tags' }, personaLabel(c)))),
+      h('p', { class: 'last' }, c.last_message ? c.last_message.slice(0, 60) : c.tagline),
+      h('div', { class: 'row' },
+        h('a', { class: 'button small', href: `#/talk?ids=${c.id}` }, c.persona === 'interpreter' ? '通訳' : '声で話す'),
+        c.persona !== 'interpreter' && h('button', { class: 'secondary small', onclick: (e) => startChat(c, e.currentTarget) }, '文字で話す'))))),
+    h('p', { class: 'status' }, usageLine(), ' ', h('a', { href: '#/billing' }, 'プラン')),
+  ];
+}
+
+// はじめての人：公式の相棒から選んでもらう
+async function onboardingPage() {
+  const { suggested } = await api('/api/companions');
+  const picked = new Set(suggested.filter((c) => ['secretary', 'trainer'].includes(c.persona)).map((c) => c.id));
+  const grid = h('div', { class: 'grid' });
+  const render = () => put(grid, suggested.map((c) => h('button', {
+    class: 'card pick', 'aria-pressed': picked.has(c.id) ? 'true' : 'false',
+    onclick: () => { picked.has(c.id) ? picked.delete(c.id) : picked.add(c.id); render(); },
+  }, h('div', { class: 'card-head' }, h('span', { class: `avatar p-${c.persona}` }, initial(c.name)), h('div', {}, h('h3', {}, c.name), h('div', { class: 'tags' }, personaLabel(c)))),
+  h('p', {}, c.tagline))));
+  render();
+  const msg = h('p');
+  const start = async (btn) => {
+    if (!picked.size) { put(msg, h('span', { class: 'error' }, '1人以上選んでください')); return; }
+    btn.disabled = true;
+    for (const id of picked) await api('/api/companions', { method: 'POST', body: { characterId: id } });
+    const ids = [...picked].filter((id) => suggested.find((c) => c.id === id)?.persona !== 'interpreter').slice(0, 4);
+    location.hash = ids.length ? `#/talk?ids=${ids[0]}` : '#/';
+  };
+  return [
+    h('section', { class: 'greeting' },
+      h('h1', {}, 'ようこそ。まずは相棒を選びましょう'),
+      h('p', { class: 'muted' }, 'あとから何人でも増やせます。相棒はあなたの予定や好きなものを覚えて、話すほど合ってきます。')),
+    grid, msg,
+    h('p', {}, h('button', { class: 'big', onclick: (e) => start(e.currentTarget) }, 'この相棒ではじめる')),
   ];
 }
 
@@ -118,7 +229,7 @@ async function characterPage(id) {
   const startChat = async () => {
     if (!me.user) { location.hash = '#/login'; return; }
     try {
-      const { id: convId } = await api(`/api/characters/${c.id}/conversations`, { method: 'POST' });
+      const { id: convId } = await api(`/api/characters/${c.id}/conversations/latest`, { method: 'POST' });
       location.hash = `#/chat/${convId}`;
     } catch (err) {
       if (err.data?.code === 'age_required') put(msg, birthDateForm(startChat));
@@ -126,32 +237,43 @@ async function characterPage(id) {
     }
   };
   const isOwner = me.user?.id === c.creator_id;
+  const toggleCompanion = async () => {
+    if (!me.user) { location.hash = '#/login'; return; }
+    try {
+      if (c.companion) await api(`/api/companions/${c.id}`, { method: 'DELETE' });
+      else await api('/api/companions', { method: 'POST', body: { characterId: c.id } });
+      route();
+    } catch (err) { put(msg, h('p', { class: 'error' }, err.message)); }
+  };
   return [
     h('div', { class: 'card-head' }, h('span', { class: `avatar big p-${c.persona}` }, initial(c.name)),
-      h('div', {}, h('h1', {}, c.name), h('div', { class: 'tags' }, c.persona !== 'chat' && h('span', { class: 'chip' }, personaLabel(c)), ` by ${c.creator}`))),
+      h('div', {}, h('h1', {}, c.name), h('div', { class: 'tags' }, c.persona !== 'chat' && h('span', { class: 'chip' }, personaLabel(c)), ` ${c.official ? '公式' : `by ${c.creator}`}`))),
     h('p', {}, c.tagline),
     h('div', { class: 'row' },
-      me.user && h('a', { class: 'button big', href: `#/talk?ids=${c.id}` }, c.persona === 'interpreter' ? '通訳をはじめる' : '声で話す'),
-      c.persona !== 'interpreter' && h('button', { class: 'secondary', onclick: startChat }, '文字で話す'),
-      isOwner && h('a', { class: 'button secondary', href: `#/edit/${c.id}` }, '編集')),
+      me.user
+        ? h('a', { class: 'button big', href: `#/talk?ids=${c.id}` }, c.persona === 'interpreter' ? '通訳をはじめる' : '声で話す')
+        : h('a', { class: 'button big', href: '#/login' }, 'はじめる'),
+      me.user && c.persona !== 'interpreter' && h('button', { class: 'secondary', onclick: startChat }, '文字で話す'),
+      me.user && h('button', { class: 'secondary', onclick: toggleCompanion }, c.companion ? '相棒から外す' : '相棒にする'),
+      isOwner && h('a', { class: 'button secondary', href: `#/creator/edit/${c.id}` }, 'クリエイター画面で編集')),
     msg,
     c.persona === 'other' && c.role && [h('h2', {}, '役割'), h('div', { class: 'section' }, c.role)],
     c.world_setting && [h('h2', {}, '基本設定'), h('div', { class: 'section' }, c.world_setting)],
     c.profile && [h('h2', {}, 'プロフィール'), h('div', { class: 'section' }, c.profile)],
     c.opening && [h('h2', {}, '最初のひとこと'), h('div', { class: 'section' }, c.opening)],
-    me.user && c.persona !== 'interpreter' && await tweakCard(c),
-    me.user && c.persona !== 'interpreter' && await proactiveCard(c),
+    me.user && c.persona !== 'interpreter' && await tweakCard(c, 'personal'),
+    me.user && c.companion && c.persona !== 'interpreter' && await proactiveCard(c),
   ];
 }
 
 // 調整：プロンプトで性格・話し方を微修正。作成者は公開中の調整、それ以外は自分用の調整。
 const TWEAK_CHIPS = ['返答はもっと短く', '敬語で話す', 'タメ口で話す', '関西弁で話す', 'もっと褒めて', '厳しめに', '質問を多めに', '絵文字を使わない'];
 
-async function tweakCard(c) {
+async function tweakCard(c, scope) {
   const t = await api(`/api/characters/${c.id}/tweaks`);
-  const scope = t.isCreator ? 'creator' : 'personal';
+  const isPublic = scope === 'creator';
   const area = h('textarea', { maxlength: 1000, placeholder: '例：語尾を「〜だぜ」にする／返答は1文で／敬語をやめる' });
-  area.value = t.isCreator ? t.creator : t.personal;
+  area.value = isPublic ? t.creator : t.personal;
   const out = h('div');
   const save = async () => {
     try { await api(`/api/characters/${c.id}/tweaks`, { method: 'PUT', body: { scope, text: area.value } }); route(); }
@@ -170,15 +292,15 @@ async function tweakCard(c) {
   };
   const versions = t.versions.filter((v) => v.scope === scope);
   return h('section', { class: 'panel' },
-    h('h2', {}, t.isCreator ? '性格・話し方の調整（公開中のキャラに反映）' : 'あなた用の調整'),
-    h('p', { class: 'muted' }, t.isCreator
+    h('h2', {}, isPublic ? '性格・話し方の調整（公開中のキャラに反映）' : `${c.name}をあなた好みに`),
+    h('p', { class: 'muted' }, isPublic
       ? 'プロンプト（指示文）でキャラの性格や返答の仕方を微調整します。会話する全員に反映されます。'
-      : 'あなたとの会話だけに反映されます。作成者の設定は変わりません。'),
+      : '話し方や距離感を、あなたとの会話だけ調整できます。たとえば「返答はもっと短く」「タメ口で」など。'),
     h('div', { class: 'chips' }, TWEAK_CHIPS.map((x) => h('button', { class: 'chip-btn', onclick: () => {
       area.value = area.value.trim() ? `${area.value.trim()}／${x}` : x;
     } }, x))),
     area,
-    h('div', { class: 'row' }, h('button', { onclick: save }, '保存'), h('button', { class: 'secondary', onclick: (e) => compare(e.currentTarget) }, '調整前と比べる（2回分）')),
+    h('div', { class: 'row' }, h('button', { onclick: save }, '保存'), h('button', { class: 'secondary', onclick: (e) => compare(e.currentTarget) }, '試しに比べる（会話2回分）')),
     out,
     versions.length > 0 && h('details', {}, h('summary', {}, `以前の調整（${versions.length}）`),
       h('ul', { class: 'list' }, versions.map((v) => h('li', {},
@@ -201,7 +323,7 @@ async function proactiveCard(c) {
     h('h2', {}, `${c.name}からのメッセージ`),
     h('p', { class: 'muted' }, '覚えていることや予定に合わせて、毎日メッセージが届きます。予定の30分前にはお知らせも届きます。'),
     row('morning', 'おはよう'), row('night', 'おやすみ'),
-    h('p', {}, h('a', { href: '#/inbox' }, '受信箱と通知の設定へ')));
+    h('p', {}, h('a', { href: '#/inbox' }, 'お知らせと通知の設定へ')));
 }
 
 // ---- 画面：文字チャット ----
@@ -257,6 +379,7 @@ async function chatPage(id) {
 async function editPage(id) {
   if (!me.user) { location.hash = '#/login'; return []; }
   const c = id ? (await api(`/api/characters/${id}`)).character : { visibility: 'public', persona: 'chat', voice: 'marin', voice_speed: 1 };
+  if (id && c.creator_id !== me.user.id) { location.hash = `#/c/${id}`; return []; }
   const PERSONA_HELP = {
     chat: '会話を楽しむキャラです。舞台や関係性をプロフィールに書きます。',
     trainer: 'メニュー作り・トレーニングの記録・自己ベストの把握ができます。あなたが決めるのは性格と口調です。',
@@ -314,12 +437,13 @@ async function editPage(id) {
     body.voice_speed = Number(body.voice_speed);
     try {
       const r = id ? await api(`/api/characters/${id}`, { method: 'PUT', body }) : await api('/api/characters', { method: 'POST', body });
-      location.hash = `#/c/${id ?? r.id}`;
+      location.hash = id ? '#/creator' : `#/creator/edit/${r.id}`;
     } catch (err) { put(msg, h('span', { class: 'error' }, err.message)); }
   };
   const field = (label, el) => [h('label', {}, label), el];
   return [
-    h('h1', {}, id ? 'キャラを編集' : 'キャラをつくる'),
+    h('p', {}, h('a', { href: '#/creator' }, '← クリエイター')),
+    h('h1', {}, id ? `${c.name}を編集` : 'キャラをつくる'),
     h('p', { class: 'muted' }, '役割（基本ペルソナ）を選ぶと、その役割に必要な道具（記録・予定・単語カードなど）が自動で付きます。個性は自由に決められます。'),
     field('基本ペルソナ（役割）', fields.persona), help, roleWrap,
     field('キャラ名', fields.name),
@@ -333,7 +457,8 @@ async function editPage(id) {
     field('タグ（カンマ区切り）', fields.tags),
     field('公開範囲', fields.visibility),
     msg,
-    h('p', {}, h('button', { onclick: save }, '保存')),
+    h('p', {}, h('button', { onclick: save }, '保存'), ' ', id && h('a', { class: 'button secondary', href: `#/c/${id}` }, '公開ページを見る')),
+    id && c.persona !== 'interpreter' && await tweakCard(c, 'creator'),
   ];
 }
 
@@ -341,9 +466,20 @@ async function editPage(id) {
 
 async function talkPage(params) {
   if (!me.user) { location.hash = '#/login'; return []; }
-  const [{ characters: mine }, { characters: popular }] = await Promise.all([api('/api/my/characters'), api('/api/characters?sort=popular')]);
-  const pool = [...new Map([...mine, ...popular].map((c) => [c.id, c])).values()];
+  const { companions } = await api('/api/companions');
+  const pool = [...companions];
+  // 相棒でないキャラをキャラページから呼んだときも、その場で話せるようにする（話すと相棒に加わる）
+  for (const id of (params.get('ids') ?? '').split(',').map(Number).filter(Boolean)) {
+    if (!pool.some((c) => c.id === id)) {
+      const r = await api(`/api/characters/${id}`).catch(() => null);
+      if (r) pool.push(r.character);
+    }
+  }
+  if (!pool.length) {
+    return [h('h1', {}, 'トーク'), h('p', {}, 'まだ相棒がいません。'), h('a', { class: 'button big', href: '#/' }, '相棒を選ぶ')];
+  }
   let selected = (params.get('ids') ?? '').split(',').map(Number).filter((id) => pool.some((c) => c.id === id)).slice(0, 4);
+  if (!selected.length) selected = [pool.find((c) => c.persona !== 'interpreter')?.id ?? pool[0].id];
 
   const stage = h('div', { class: 'stage' });
   const log = h('div', { class: 'talk-log', 'aria-live': 'polite' });
@@ -541,7 +677,7 @@ async function inboxPage() {
     } catch (err) { pushMsg.textContent = `通知をオンにできませんでした（${err.message}）`; }
   };
   return [
-    h('h1', {}, '受信箱'),
+    h('h1', {}, 'お知らせ'),
     publicKey && 'serviceWorker' in navigator && h('p', {}, h('button', { class: 'secondary', onclick: enablePush }, 'スマホ・PCに通知する'), ' ', pushMsg),
     messages.length ? h('div', { class: 'chat' }, messages.map((m) => h('div', { class: `bubble assistant${m.read_at ? '' : ' unread'}` },
       h('div', { class: 'who' }, h('a', { href: `#/c/${m.character_id}` }, m.character_name), h('span', { class: 'muted' }, ` ${m.created_at.slice(5, 16)}`)), m.text,
@@ -610,9 +746,55 @@ async function billingPage(params) {
   ];
 }
 
-// ---- 画面：マイページ ----
+// ---- 画面：設定（一般ユーザー） ----
 
-async function mePage() {
+async function settingsPage() {
+  if (!me.user) { location.hash = '#/login'; return []; }
+  const { companions } = await api('/api/companions');
+  const birth = h('input', { type: 'date', value: me.user.birthDate ?? '', max: new Date().toISOString().slice(0, 10) });
+  const birthMsg = h('span', { class: 'muted' });
+  const saveBirth = async () => {
+    try { await api('/api/me/birth-date', { method: 'POST', body: { birthDate: birth.value } }); birthMsg.textContent = '保存しました'; }
+    catch (err) { birthMsg.textContent = err.message; }
+  };
+  const sub = me.subscription;
+  return [
+    h('h1', {}, '設定'),
+    h('section', { class: 'panel' },
+      h('h2', {}, 'プランとポイント'),
+      h('p', {}, usageLine()),
+      sub?.status === 'active' && h('p', { class: 'muted' }, `次回更新 ${sub.currentPeriodEnd?.slice(0, 10)}`),
+      h('a', { class: 'button', href: '#/billing' }, 'プラン・ポイントを見る')),
+    h('section', { class: 'panel' },
+      h('h2', {}, 'わたしの相棒'),
+      companions.length
+        ? h('ul', { class: 'list' }, companions.map((c) => h('li', {},
+          h('span', { class: `avatar p-${c.persona}` }, initial(c.name)), h('a', { href: `#/c/${c.id}` }, c.name), h('span', { class: 'muted' }, personaLabel(c)),
+          h('button', { class: 'secondary small', onclick: async () => { await api(`/api/companions/${c.id}`, { method: 'DELETE' }); route(); } }, '相棒から外す'))))
+        : h('p', { class: 'muted' }, 'まだいません。'),
+      h('p', { class: 'muted' }, '外しても、会話や覚えていることは残ります。また相棒にすれば続きから話せます。'),
+      h('a', { href: '#/discover' }, '相棒をさがす')),
+    h('section', { class: 'panel' },
+      h('h2', {}, 'お知らせ'),
+      h('p', { class: 'muted' }, '相棒からの朝・夜のメッセージは、各キャラのページでオン・オフできます。'),
+      h('a', { href: '#/inbox' }, 'お知らせと通知の設定')),
+    h('section', { class: 'panel' },
+      h('h2', {}, 'アカウント'),
+      h('p', {}, me.user.email),
+      h('label', {}, '生年月日（18歳以上が対象のキャラを使うときに必要です）'),
+      h('div', { class: 'row' }, h('div', { style: 'flex:1' }, birth), h('button', { class: 'secondary', onclick: saveBirth }, '保存'), birthMsg),
+      h('p', {}, h('a', { href: '#/notes' }, '覚えていること・記録の確認と削除（ノート）')),
+      h('p', {}, h('button', { class: 'secondary', onclick: async () => { await api('/auth/logout', { method: 'POST' }); location.hash = '#/'; route(); } }, 'ログアウト'))),
+    h('section', { class: 'panel muted-panel' },
+      h('h2', {}, 'クリエイターの方へ'),
+      h('p', { class: 'muted' }, '自分でキャラをつくって公開し、話された分に応じて報酬を受け取れます（準備中の機能を含みます）。'),
+      h('a', { href: '#/creator' }, 'クリエイター画面へ')),
+  ];
+}
+
+// ---- 画面：クリエイター（キャラの作成・公開・報酬） ----
+
+async function creatorPage() {
   if (!me.user) { location.hash = '#/login'; return []; }
   const { characters } = await api('/api/my/characters');
   const r = me.rewards;
@@ -622,18 +804,18 @@ async function mePage() {
     catch (err) { put(msg, h('span', { class: 'error' }, err.message)); }
   };
   return [
-    h('h1', {}, 'マイページ'),
-    h('p', { class: 'status' }, usageLine()),
-    h('div', { class: 'row' }, h('a', { class: 'button big', href: '#/talk' }, 'トーク'), h('a', { class: 'button secondary', href: '#/notes' }, 'ノート'), h('a', { class: 'button secondary', href: '#/inbox' }, '受信箱')),
-    h('h2', {}, 'クリエイター報酬'),
+    h('p', {}, h('a', { href: '#/settings' }, '← 設定')),
+    h('h1', {}, 'クリエイター'),
+    h('p', { class: 'notice info' }, 'クリエイター向けの機能は準備中です。いまはキャラの作成・公開と、報酬の確認ができます。'),
+    h('div', { class: 'row spread' }, h('h2', {}, 'つくったキャラ'), h('a', { class: 'button', href: '#/creator/new' }, 'キャラをつくる')),
+    characters.length
+      ? h('div', { class: 'grid' }, characters.map((c) => h('a', { class: 'card', href: `#/creator/edit/${c.id}` },
+        h('div', { class: 'card-head' }, h('span', { class: `avatar p-${c.persona}` }, initial(c.name)), h('h3', {}, c.name)),
+        h('div', { class: 'tags' }, `${personaLabel(c)} ・ ${{ public: '公開', unlisted: '限定公開', private: '非公開' }[c.visibility]} ・ 会話 ${c.chat_count}`))))
+      : h('p', { class: 'muted' }, 'まだありません。'),
+    h('h2', {}, '報酬'),
     h('p', {}, `出金可能 ${r.available}R ・ 保留中 ${r.pending}R ・ 申請済み ${r.requestedOrPaid}R（最低出金 ${r.minPayoutR}R）`),
     h('p', {}, h('button', { onclick: payout, disabled: r.available < r.minPayoutR }, '出金を申請'), ' ', msg),
-    h('h2', {}, 'つくったキャラ'),
-    characters.length
-      ? h('div', { class: 'grid' }, characters.map((c) => h('a', { class: 'card', href: `#/c/${c.id}` },
-        h('div', { class: 'card-head' }, h('span', { class: `avatar p-${c.persona}` }, initial(c.name)), h('h3', {}, c.name)),
-        h('div', { class: 'tags' }, `${personaLabel(c)} ・ ${c.visibility} ・ 会話 ${c.chat_count}`))))
-      : h('p', { class: 'muted' }, 'まだありません。'),
   ];
 }
 
@@ -663,17 +845,23 @@ async function route() {
   try {
     await refreshMe();
     let content;
-    if (parts.length === 0) content = await homePage(params);
+    if (parts.length === 0) content = await homePage();
+    else if (parts[0] === 'discover') content = await discoverPage(params);
     else if (parts[0] === 'c') content = await characterPage(parts[1]);
     else if (parts[0] === 'chat') content = await chatPage(parts[1]);
-    else if (parts[0] === 'create') content = await editPage(null);
-    else if (parts[0] === 'edit') content = await editPage(parts[1]);
     else if (parts[0] === 'talk') content = await talkPage(params);
     else if (parts[0] === 'notes') content = await notesPage(params);
     else if (parts[0] === 'inbox') content = await inboxPage();
     else if (parts[0] === 'billing') content = await billingPage(params);
-    else if (parts[0] === 'me') content = await mePage();
-    else if (parts[0] === 'login') content = loginPage();
+    else if (parts[0] === 'settings') content = await settingsPage();
+    else if (parts[0] === 'creator' && parts[1] === 'new') content = await editPage(null);
+    else if (parts[0] === 'creator' && parts[1] === 'edit') content = await editPage(parts[2]);
+    else if (parts[0] === 'creator') content = await creatorPage();
+    // 以前の URL
+    else if (parts[0] === 'me') { location.replace('#/settings'); return; }
+    else if (parts[0] === 'create') { location.replace('#/creator/new'); return; }
+    else if (parts[0] === 'edit') { location.replace(`#/creator/edit/${parts[1]}`); return; }
+    else if (parts[0] === 'login') content = me.user ? (location.replace('#/'), []) : loginPage();
     else content = h('p', {}, 'ページが見つかりません');
     put(view, ...[content].flat(Infinity).filter((x) => x != null && x !== false));
   } catch (err) {

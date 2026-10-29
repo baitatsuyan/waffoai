@@ -16,6 +16,8 @@ import { chatToolDefs, executeTool, ToolError } from './tools.js';
 import { checkUserText, ageGate, trackPartnerUsage } from './safety.js';
 import { companionRoutes } from './routes/companion.js';
 import { voiceRoutes } from './routes/voice.js';
+import { homeRoutes, touchCompanion } from './routes/home.js';
+import { officialOwnerId, OFFICIAL_EMAIL } from './seed.js';
 
 const VISIBILITIES = ['public', 'unlisted', 'private'];
 const MAX_MESSAGE_CHARS = 2000;
@@ -45,7 +47,8 @@ export function createApp({
   // ---- 認証 ----
   app.post('/auth/login', async (c) => {
     const { email } = await c.req.json().catch(() => ({}));
-    if (typeof email !== 'string' || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 320) {
+    if (typeof email !== 'string' || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 320
+      || email.trim().toLowerCase() === OFFICIAL_EMAIL) {
       return c.json({ error: 'メールアドレスが正しくありません' }, 400);
     }
     const link = createLoginLink(db, email.trim().toLowerCase());
@@ -96,20 +99,25 @@ export function createApp({
     const q = (c.req.query('q') ?? '').trim();
     const like = `%${q.replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
     const rows = db.prepare(`
-      SELECT c.id, c.name, c.tagline, c.tags, c.persona, c.role, c.chat_count, u.display_name AS creator
+      SELECT c.id, c.name, c.tagline, c.tags, c.persona, c.role, c.chat_count, u.display_name AS creator,
+        c.creator_id = ? AS official
       FROM characters c JOIN users u ON u.id = c.creator_id
       WHERE c.visibility = 'public'
         AND (? = '' OR c.name LIKE ? ESCAPE '\\' OR c.tagline LIKE ? ESCAPE '\\' OR c.tags LIKE ? ESCAPE '\\')
-      ORDER BY ${sort} LIMIT 60
-    `).all(q, like, like, like);
+      ORDER BY official DESC, ${sort} LIMIT 60
+    `).all(officialOwnerId(db) ?? -1, q, like, like, like);
     return c.json({ characters: rows });
   });
 
   app.get('/api/characters/:id', (c) => {
     const chara = loadReadableCharacter(c.req.param('id'), currentUser(c, db));
     if (!chara) return c.json({ error: 'キャラが見つかりません' }, 404);
+    const user = currentUser(c, db);
     const creator = db.prepare('SELECT display_name FROM users WHERE id = ?').get(chara.creator_id);
-    return c.json({ character: { ...chara, creator: creator.display_name } });
+    const companion = user ? Boolean(db.prepare('SELECT 1 FROM user_companions WHERE user_id = ? AND character_id = ?').get(user.id, chara.id)) : false;
+    // 作成者による調整（tweak）は作成者以外には見せない
+    const { tweak, ...publicFields } = chara;
+    return c.json({ character: { ...publicFields, ...(user?.id === chara.creator_id ? { tweak } : {}), creator: creator.display_name, official: chara.creator_id === officialOwnerId(db), companion } });
   });
 
   app.get('/api/my/characters', requireUser, (c) => {
@@ -149,8 +157,25 @@ export function createApp({
     const gate = ageGate(c.get('user'), chara);
     if (gate) return c.json(gate, 403);
     const r = db.prepare('INSERT INTO conversations (user_id, character_id) VALUES (?, ?)').run(c.get('user').id, chara.id);
+    touchCompanion(db, c.get('user').id, chara.id);
     db.prepare('UPDATE characters SET chat_count = chat_count + 1 WHERE id = ?').run(chara.id);
     return c.json({ id: Number(r.lastInsertRowid) }, 201);
+  });
+
+  // そのキャラとの最新の会話（なければ作る）。ホームや相棒の画面から続きを開く。
+  app.post('/api/characters/:id/conversations/latest', requireUser, (c) => {
+    const user = c.get('user');
+    const chara = loadReadableCharacter(c.req.param('id'), user);
+    if (!chara) return c.json({ error: 'キャラが見つかりません' }, 404);
+    const gate = ageGate(user, chara);
+    if (gate) return c.json(gate, 403);
+    let conv = db.prepare('SELECT id FROM conversations WHERE user_id = ? AND character_id = ? ORDER BY id DESC LIMIT 1').get(user.id, chara.id);
+    if (!conv) {
+      conv = { id: Number(db.prepare('INSERT INTO conversations (user_id, character_id) VALUES (?, ?)').run(user.id, chara.id).lastInsertRowid) };
+      db.prepare('UPDATE characters SET chat_count = chat_count + 1 WHERE id = ?').run(chara.id);
+    }
+    touchCompanion(db, user.id, chara.id);
+    return c.json({ id: conv.id });
   });
 
   app.get('/api/conversations/:id', requireUser, (c) => {
@@ -232,6 +257,7 @@ export function createApp({
     });
   });
 
+  homeRoutes(app, { db, requireUser, loadReadableCharacter });
   companionRoutes(app, { db, requireUser, loadReadableCharacter, generateText });
   voiceRoutes(app, { db, requireUser, loadReadableCharacter, realtime });
 

@@ -7,6 +7,7 @@ import { InsufficientPointsError, getBalance } from '../billing/points.js';
 import { executeTool, ToolError } from '../tools.js';
 import { ageGate, checkUserText, trackPartnerUsage, INTERPRETER_NOTICE } from '../safety.js';
 import { directSession, earSession, voiceSession, safetyIdFor, RealtimeError } from '../realtime.js';
+import { touchCompanion } from './home.js';
 
 // リアルタイム音声のセッション管理。
 // 1つの「音声セッション」に、1対1なら通話1本、グループなら耳1本＋キャラの声 N 本、通訳なら翻訳1本がぶら下がる。
@@ -67,6 +68,7 @@ export function voiceRoutes(app, { db, requireUser, loadReadableCharacter, realt
       }
       throw err;
     }
+    for (const ch of charas) touchCompanion(db, user.id, ch.id);
     const id = randomBytes(12).toString('hex');
     const now = sqlTime(new Date());
     db.prepare(`INSERT INTO voice_sessions (id, user_id, mode, character_ids, started_at, last_heartbeat_at, billed_minutes) VALUES (?, ?, ?, ?, ?, ?, 1)`)
