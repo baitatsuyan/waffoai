@@ -52,7 +52,16 @@ async function refreshMe() {
   }
   put(nav, link('#/', 'マイページ'), link('#/discover', 'さがす'), link('#/talk', 'トーク'), link('#/notes', 'ノート'), link('#/settings', '設定'));
   const inbox = await api('/api/inbox').catch(() => ({ unread: 0 }));
-  put(acc, h('a', { href: '#/inbox', 'aria-label': `お知らせ ${inbox.unread}件` }, 'お知らせ', inbox.unread ? h('span', { class: 'badge' }, String(inbox.unread)) : null));
+  put(acc, h('a', { href: '#/inbox', 'aria-label': `お知らせ ${inbox.unread}件` }, 'お知らせ', inbox.unread ? h('span', { class: 'badge' }, String(inbox.unread)) : null),
+    h('button', { class: 'secondary small', onclick: logout }, 'ログアウト'));
+}
+
+// ログアウトしたらメインページへ
+async function logout() {
+  if (currentTalk) { currentTalk.stop(); currentTalk = null; }
+  await api('/auth/logout', { method: 'POST' });
+  location.hash = '#/';
+  route();
 }
 
 function usageLine() {
@@ -144,9 +153,11 @@ async function landingPage() {
       h('h1', {}, 'あなただけの相棒が、', h('br'), '毎日の味方になる'),
       h('p', {}, '勉強を見てくれる先生、予定を預かる執事、記録を見てくれるトレーナー。役割を選んで、名前と性格と声を決めるだけで、あなただけの相棒ができます。声でも文字でも話せて、話したことを覚えていて、むこうから声もかけてくれます。'),
       h('div', { class: 'row' },
-        h('a', { class: 'button big', href: '#/make' }, '自分だけの相棒をつくる'),
+        me.user ? h('a', { class: 'button big', href: '#/' }, 'マイページへ') : h('a', { class: 'button big', href: '#/make' }, '自分だけの相棒をつくる'),
         demoBox && h('button', { class: 'secondary', onclick: () => document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' }) }, 'まずは話してみる')),
-      h('p', { class: 'muted small' }, '無料ではじめられます。登録で50ptプレゼント。')),
+      me.user
+        ? h('p', { class: 'muted small' }, 'ログイン中です。')
+        : h('p', { class: 'muted small' }, '無料ではじめられます。登録で50ptプレゼント。すでに登録済みの方は ', h('a', { href: '#/login' }, 'ログイン'), '。')),
     demoBox && h('section', { id: 'demo', class: 'panel demo' },
       h('h2', {}, 'まずは話してみる（登録なし）'),
       h('p', { class: 'muted' }, 'AIボウの標準の相棒です。下のボタンを押すか、自由に話しかけてみてください。'),
@@ -168,7 +179,8 @@ async function landingPage() {
     h('section', { class: 'panel cta' },
       h('h2', {}, '無料プランでも、毎日使えます'),
       h('p', { class: 'muted' }, '文字の会話は1日10回、声の会話は1日3分まで無料。もっと話したくなったら、月額プランやポイントで。'),
-      h('a', { class: 'button big', href: '#/make' }, '自分だけの相棒をつくる')),
+      h('a', { class: 'button big', href: '#/make' }, '自分だけの相棒をつくる'),
+      !me.user && h('p', { class: 'muted small' }, 'すでに登録済みの方は ', h('a', { href: '#/login' }, 'ログイン'))),
   ];
 }
 
@@ -1087,7 +1099,7 @@ async function settingsPage() {
       h('label', {}, '生年月日（18歳以上が対象のキャラを使うときに必要です）'),
       h('div', { class: 'row' }, h('div', { style: 'flex:1' }, birth), h('button', { class: 'secondary', onclick: saveBirth }, '保存'), birthMsg),
       h('p', {}, h('a', { href: '#/notes' }, '覚えていること・記録の確認と削除（ノート）')),
-      h('p', {}, h('button', { class: 'secondary', onclick: async () => { await api('/auth/logout', { method: 'POST' }); location.hash = '#/'; route(); } }, 'ログアウト'))),
+      h('p', {}, h('button', { class: 'secondary', onclick: logout }, 'ログアウト'))),
     h('section', { class: 'panel muted-panel' },
       h('h2', {}, 'クリエイターの方へ'),
       h('p', { class: 'muted' }, '自分でキャラをつくって公開し、話された分に応じて報酬を受け取れます（準備中の機能を含みます）。'),
@@ -1203,6 +1215,7 @@ async function route() {
     await refreshMe();
     let content;
     if (parts.length === 0) content = await homePage(params);
+    else if (parts[0] === 'about') content = await landingPage();
     else if (parts[0] === 'discover') content = await discoverPage(params);
     else if (parts[0] === 'c') content = await characterPage(parts[1]);
     else if (parts[0] === 'chat') content = await chatPage(parts[1]);
@@ -1223,6 +1236,7 @@ async function route() {
     else if (parts[0] === 'login') content = me.user ? (location.replace('#/'), []) : loginPage();
     else content = h('p', {}, 'ページが見つかりません');
     put(view, ...[content].flat(Infinity).filter((x) => x != null && x !== false));
+    window.scrollTo(0, 0); // ページが変わったら先頭から
   } catch (err) {
     put(view, h('p', { class: 'error' }, err.message));
   }

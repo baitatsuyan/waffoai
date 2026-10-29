@@ -213,3 +213,4 @@ button.mini { background: transparent; color: var(--accent); border: 1px solid v
 .panel.welcome p { margin: 2px 0 0; }
 .tips { margin: 12px 0 0; padding-left: 1.2em; color: var(--muted); font-size: .9rem; }
 .demo-box .composer { position: static; background: transparent; padding-bottom: 0; }
+#account { display: inline-flex; gap: 10px; align-items: center; }
