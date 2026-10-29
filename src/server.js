@@ -32,7 +32,7 @@ setInterval(async () => {
 }, 60_000).unref();
 
 serve({ fetch: app.fetch, port: env.port }, (info) => {
-  console.log(`AI棒 (AI-BOW) listening on http://localhost:${info.port}`);
+  console.log(`AIボウ listening on http://localhost:${info.port}`);
   if (!env.llmBaseUrl) console.log('LLM_BASE_URL 未設定: モック返答で動作します');
   if (!realtime) console.log('OPENAI_API_KEY 未設定: 音声トークは使えません（文字のみ）');
   if (!pushReady) console.log('VAPID 鍵が未設定: キャラからのメッセージは受信箱のみ（プッシュ通知なし）');

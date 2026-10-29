@@ -6,7 +6,7 @@ self.addEventListener('push', (event) => {
   } catch {
     data = { body: event.data?.text() };
   }
-  event.waitUntil(self.registration.showNotification(data.title ?? 'AI棒', {
+  event.waitUntil(self.registration.showNotification(data.title ?? 'AIボウ', {
     body: data.body ?? '',
     data: { url: data.url ?? '/' },
     tag: 'aibow-message',
