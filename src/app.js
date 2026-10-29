@@ -1,0 +1,267 @@
+import { Hono } from 'hono';
+import { serveStatic } from '@hono/node-server/serve-static';
+import { env, PLANS, POINT_PACKS, POINT_COSTS, CHAT_HISTORY_LIMIT, CREATOR_REWARD } from './config.js';
+import { tx } from './db.js';
+import { createLoginLink, consumeLoginToken, startSession, endSession, currentUser } from './auth.js';
+import { getBalance, unusedPaidBalance, InsufficientPointsError } from './billing/points.js';
+import { getUsage, chargeFor, refundCharge, PaymentRequiredError } from './billing/plans.js';
+import { getRewardSummary, requestPayout } from './billing/rewards.js';
+import * as stripe from './billing/stripe.js';
+import { generateReply as defaultGenerateReply } from './llm/provider.js';
+
+const VISIBILITIES = ['public', 'unlisted', 'private'];
+const MAX_MESSAGE_CHARS = 2000;
+const CHARACTER_LIMITS = { name: 50, tagline: 200, world_setting: 4000, profile: 4000, opening: 2000, tags: 200 };
+
+export function createApp({ db, generateReply = defaultGenerateReply, isProduction = process.env.NODE_ENV === 'production' }) {
+  const app = new Hono();
+
+  const requireUser = async (c, next) => {
+    const user = currentUser(c, db);
+    if (!user) return c.json({ error: 'ログインが必要です' }, 401);
+    c.set('user', user);
+    await next();
+  };
+
+  // 公開・限定公開は誰でも、非公開は作成者だけが読める。
+  const loadReadableCharacter = (id, user) => {
+    const chara = db.prepare('SELECT * FROM characters WHERE id = ?').get(Number(id));
+    if (!chara) return null;
+    if (chara.visibility === 'private' && chara.creator_id !== user?.id) return null;
+    return chara;
+  };
+
+  // ---- 認証 ----
+  app.post('/auth/login', async (c) => {
+    const { email } = await c.req.json().catch(() => ({}));
+    if (typeof email !== 'string' || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 320) {
+      return c.json({ error: 'メールアドレスが正しくありません' }, 400);
+    }
+    const link = createLoginLink(db, email.trim().toLowerCase());
+    // TODO: 本番ではメール送信サービス（Resend / SES など）でリンクを送る。
+    console.log(`[login link] ${email}: ${link}`);
+    return c.json({ ok: true, ...(isProduction ? {} : { devLink: link }) });
+  });
+
+  app.get('/auth/verify', (c) => {
+    const user = consumeLoginToken(db, c.req.query('token') ?? '');
+    if (!user) return c.text('ログインリンクが無効か期限切れです。もう一度お試しください。', 400);
+    startSession(c, db, user.id);
+    return c.redirect('/');
+  });
+
+  app.post('/auth/logout', (c) => {
+    endSession(c, db);
+    return c.json({ ok: true });
+  });
+
+  // ---- アカウント ----
+  app.get('/api/me', (c) => {
+    const user = currentUser(c, db);
+    if (!user) return c.json({ user: null });
+    return c.json({
+      user: { id: user.id, email: user.email, displayName: user.display_name },
+      points: getBalance(db, user.id),
+      usage: getUsage(db, user.id),
+      rewards: getRewardSummary(db, user.id),
+    });
+  });
+
+  // ---- キャラクター ----
+  app.get('/api/characters', (c) => {
+    const sort = c.req.query('sort') === 'new' ? 'c.created_at DESC' : 'c.chat_count DESC, c.id DESC';
+    const q = (c.req.query('q') ?? '').trim();
+    const like = `%${q.replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
+    const rows = db.prepare(`
+      SELECT c.id, c.name, c.tagline, c.tags, c.chat_count, u.display_name AS creator
+      FROM characters c JOIN users u ON u.id = c.creator_id
+      WHERE c.visibility = 'public'
+        AND (? = '' OR c.name LIKE ? ESCAPE '\\' OR c.tagline LIKE ? ESCAPE '\\' OR c.tags LIKE ? ESCAPE '\\')
+      ORDER BY ${sort} LIMIT 60
+    `).all(q, like, like, like);
+    return c.json({ characters: rows });
+  });
+
+  app.get('/api/characters/:id', (c) => {
+    const chara = loadReadableCharacter(c.req.param('id'), currentUser(c, db));
+    if (!chara) return c.json({ error: 'キャラが見つかりません' }, 404);
+    const creator = db.prepare('SELECT display_name FROM users WHERE id = ?').get(chara.creator_id);
+    return c.json({ character: { ...chara, creator: creator.display_name } });
+  });
+
+  app.get('/api/my/characters', requireUser, (c) => {
+    const rows = db.prepare('SELECT id, name, tagline, visibility, chat_count FROM characters WHERE creator_id = ? ORDER BY id DESC')
+      .all(c.get('user').id);
+    return c.json({ characters: rows });
+  });
+
+  app.post('/api/characters', requireUser, async (c) => {
+    const input = validateCharacter(await c.req.json().catch(() => null));
+    if (input.error) return c.json(input, 400);
+    const r = db.prepare(`
+      INSERT INTO characters (creator_id, name, tagline, world_setting, profile, opening, tags, visibility)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(c.get('user').id, input.name, input.tagline, input.world_setting, input.profile, input.opening, input.tags, input.visibility);
+    return c.json({ id: Number(r.lastInsertRowid) }, 201);
+  });
+
+  app.put('/api/characters/:id', requireUser, async (c) => {
+    const input = validateCharacter(await c.req.json().catch(() => null));
+    if (input.error) return c.json(input, 400);
+    const r = db.prepare(`
+      UPDATE characters SET name = ?, tagline = ?, world_setting = ?, profile = ?, opening = ?, tags = ?, visibility = ?,
+        updated_at = datetime('now')
+      WHERE id = ? AND creator_id = ?
+    `).run(input.name, input.tagline, input.world_setting, input.profile, input.opening, input.tags, input.visibility,
+      Number(c.req.param('id')), c.get('user').id);
+    if (r.changes === 0) return c.json({ error: 'キャラが見つかりません' }, 404);
+    return c.json({ ok: true });
+  });
+
+  // ---- 会話 ----
+  app.post('/api/characters/:id/conversations', requireUser, (c) => {
+    const chara = loadReadableCharacter(c.req.param('id'), c.get('user'));
+    if (!chara) return c.json({ error: 'キャラが見つかりません' }, 404);
+    const r = db.prepare('INSERT INTO conversations (user_id, character_id) VALUES (?, ?)').run(c.get('user').id, chara.id);
+    db.prepare('UPDATE characters SET chat_count = chat_count + 1 WHERE id = ?').run(chara.id);
+    return c.json({ id: Number(r.lastInsertRowid) }, 201);
+  });
+
+  app.get('/api/conversations/:id', requireUser, (c) => {
+    const conv = db.prepare('SELECT * FROM conversations WHERE id = ? AND user_id = ?').get(Number(c.req.param('id')), c.get('user').id);
+    if (!conv) return c.json({ error: '会話が見つかりません' }, 404);
+    const chara = db.prepare('SELECT id, name, tagline, opening FROM characters WHERE id = ?').get(conv.character_id);
+    const messages = db.prepare('SELECT id, role, content, created_at FROM messages WHERE conversation_id = ? ORDER BY id').all(conv.id);
+    return c.json({ conversation: conv, character: chara, messages });
+  });
+
+  app.post('/api/conversations/:id/messages', requireUser, async (c) => {
+    const user = c.get('user');
+    const { content } = await c.req.json().catch(() => ({}));
+    if (typeof content !== 'string' || !content.trim() || content.length > MAX_MESSAGE_CHARS) {
+      return c.json({ error: `メッセージは1〜${MAX_MESSAGE_CHARS}文字で入力してください` }, 400);
+    }
+    const conv = db.prepare('SELECT * FROM conversations WHERE id = ? AND user_id = ?').get(Number(c.req.param('id')), user.id);
+    if (!conv) return c.json({ error: '会話が見つかりません' }, 404);
+    const chara = loadReadableCharacter(conv.character_id, user);
+    if (!chara) return c.json({ error: 'このキャラは現在利用できません' }, 404);
+
+    // 先に課金（枠かポイント）を確定させ、生成に失敗したら取り消す。
+    let receipt;
+    try {
+      receipt = tx(db, () => chargeFor(db, { userId: user.id, feature: 'chat_message', characterId: chara.id }));
+    } catch (err) {
+      if (err instanceof InsufficientPointsError || err instanceof PaymentRequiredError) {
+        return c.json({ error: '本日の無料枠を使い切りました。プランの加入かポイントの購入で続けられます。', code: 'payment_required' }, 402);
+      }
+      throw err;
+    }
+
+    const history = db.prepare('SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT ?')
+      .all(conv.id, CHAT_HISTORY_LIMIT - 1).reverse();
+    history.push({ role: 'user', content: content.trim() });
+
+    let reply;
+    try {
+      reply = await generateReply({ chara, history });
+    } catch (err) {
+      tx(db, () => refundCharge(db, receipt));
+      console.error('generateReply failed:', err);
+      return c.json({ error: '返答の生成に失敗しました。消費した枠・ポイントは戻しています。' }, 502);
+    }
+
+    const saved = tx(db, () => {
+      const ins = db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)');
+      ins.run(conv.id, 'user', content.trim());
+      const r = ins.run(conv.id, 'assistant', reply.text);
+      return Number(r.lastInsertRowid);
+    });
+    return c.json({
+      message: { id: saved, role: 'assistant', content: reply.text },
+      charged: { via: receipt.via, points: receipt.cost ?? 0 },
+      points: getBalance(db, user.id),
+      usage: getUsage(db, user.id),
+    });
+  });
+
+  // ---- 課金 ----
+  app.get('/api/billing/catalog', (c) =>
+    c.json({ plans: PLANS, pointPacks: POINT_PACKS, pointCosts: POINT_COSTS, creatorReward: CREATOR_REWARD }));
+
+  const requireStripe = async (c, next) => {
+    if (!env.stripeSecretKey) return c.json({ error: '決済は現在準備中です（STRIPE_SECRET_KEY 未設定）' }, 503);
+    await next();
+  };
+  app.use('/api/billing/checkout/*', requireStripe);
+  app.use('/api/billing/portal', requireStripe);
+
+  app.post('/api/billing/checkout/subscription', requireUser, async (c) => {
+    const { plan, interval } = await c.req.json().catch(() => ({}));
+    if (!PLANS[plan]?.priceJpy?.[interval] || plan === 'free') return c.json({ error: 'プランが正しくありません' }, 400);
+    return c.json({ url: await stripe.createSubscriptionCheckout(db, c.get('user'), plan, interval) });
+  });
+
+  app.post('/api/billing/checkout/points', requireUser, async (c) => {
+    const { pack } = await c.req.json().catch(() => ({}));
+    if (!POINT_PACKS[pack]) return c.json({ error: '商品が正しくありません' }, 400);
+    return c.json({ url: await stripe.createPointCheckout(db, c.get('user'), pack) });
+  });
+
+  // 解約・プラン変更・支払方法の変更は Stripe のカスタマーポータルに任せる。
+  app.post('/api/billing/portal', requireUser, async (c) =>
+    c.json({ url: await stripe.createPortalSession(db, c.get('user')) }));
+
+  app.post('/api/stripe/webhook', async (c) => {
+    let event;
+    try {
+      event = stripe.verifyWebhook(await c.req.text(), c.req.header('stripe-signature') ?? '');
+    } catch (err) {
+      return c.json({ error: `invalid signature: ${err.message}` }, 400);
+    }
+    return c.json({ result: stripe.handleStripeEvent(db, event) });
+  });
+
+  // ---- クリエイター報酬 ----
+  app.post('/api/creator/payouts', requireUser, (c) => {
+    try {
+      return c.json(tx(db, () => requestPayout(db, c.get('user').id)), 201);
+    } catch (err) {
+      return c.json({ error: err.message }, 400);
+    }
+  });
+
+  // ---- 運営 ----
+  app.get('/api/admin/funds-report', requireUser, (c) => {
+    if (!env.adminEmails.includes(c.get('user').email)) return c.json({ error: 'forbidden' }, 403);
+    const unused = unusedPaidBalance(db);
+    return c.json({
+      unusedPaidPoints: unused,
+      // 1pt = 1円で発行しているため、未使用残高（円）はポイント数と同じ。
+      unusedPaidJpy: unused,
+      needsFilingAndDeposit: unused > 10_000_000,
+      note: '資金決済法：基準日（3/31・9/30）の未使用残高が1,000万円を超えると、届出とその半額以上の供託が必要です。',
+    });
+  });
+
+  app.onError((err, c) => {
+    console.error(err);
+    return c.json({ error: 'サーバエラーが発生しました' }, 500);
+  });
+
+  app.use('/*', serveStatic({ root: './public' }));
+  return app;
+}
+
+function validateCharacter(body) {
+  if (!body || typeof body !== 'object') return { error: '入力が正しくありません' };
+  const out = {};
+  for (const [field, max] of Object.entries(CHARACTER_LIMITS)) {
+    const v = body[field] ?? '';
+    if (typeof v !== 'string' || v.length > max) return { error: `${field} は${max}文字以内で入力してください` };
+    out[field] = v.trim();
+  }
+  if (!out.name) return { error: 'キャラ名は必須です' };
+  if (!VISIBILITIES.includes(body.visibility)) return { error: '公開範囲が正しくありません' };
+  out.visibility = body.visibility;
+  return out;
+}
