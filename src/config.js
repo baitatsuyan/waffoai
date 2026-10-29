@@ -2,7 +2,8 @@
 
 export const env = {
   port: Number(process.env.PORT ?? 3000),
-  baseUrl: process.env.BASE_URL ?? 'http://localhost:3000',
+  // Render では RENDER_EXTERNAL_URL（https://xxx.onrender.com）が自動で入る。独自ドメインにしたら BASE_URL で上書きする
+  baseUrl: process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000',
   dbPath: process.env.DB_PATH ?? 'data/aibow.db',
   // LLM: OpenAI 互換 API（OpenRouter / BytePlus ModelArk / DeepSeek など）。未設定ならモック。
   llmBaseUrl: process.env.LLM_BASE_URL ?? '',
@@ -24,6 +25,9 @@ export const env = {
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY ?? '',
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY ?? '',
   vapidSubject: process.env.VAPID_SUBJECT ?? 'mailto:support@example.com',
+  resendApiKey: process.env.RESEND_API_KEY ?? '',
+  mailFrom: process.env.MAIL_FROM ?? '',
+
   adminEmails: (process.env.ADMIN_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
 };
 

@@ -4,6 +4,7 @@ import { openDb } from '../src/db.js';
 import { createApp } from '../src/app.js';
 import { generateKeyPairSync, createSign, createVerify } from 'node:crypto';
 import { Waffo, Environment } from '@waffo/waffo-node';
+import { createMailer } from '../src/mail.js';
 
 function setup(generateReply = async ({ instructions }) => ({ text: `${instructions.match(/「(.+?)」/)[1]}です` }), waffo = null) {
   const db = openDb(':memory:');
@@ -111,6 +112,41 @@ test('ログインリンクは1回しか使えない', async () => {
   const path = new URL(body.devLink).pathname + new URL(body.devLink).search;
   assert.equal((await u('GET', path)).status, 302);
   assert.equal((await client()('GET', path)).status, 400);
+});
+
+test('本番ではログインリンクをメールで送り、画面には出さない', async () => {
+  const sent = [];
+  const app = createApp({ db: openDb(':memory:'), isProduction: true, sendMail: async (m) => { sent.push(m); } });
+  const post = (email) => app.request('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+  const res = await post('a@example.com');
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).devLink, undefined);
+  assert.equal(sent[0].to, 'a@example.com');
+  const link = sent[0].text.match(/https?:\/\/\S+/)[0];
+  assert.equal((await app.request(new URL(link).pathname + new URL(link).search)).status, 302);
+
+  // 送信に失敗したら 502、メール未設定の本番は受け付けない
+  const failing = createApp({ db: openDb(':memory:'), isProduction: true, sendMail: async () => { throw new Error('down'); } });
+  assert.equal((await failing.request('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"email":"a@example.com"}' })).status, 502);
+  const noMail = createApp({ db: openDb(':memory:'), isProduction: true, sendMail: null });
+  assert.equal((await noMail.request('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"email":"a@example.com"}' })).status, 503);
+});
+
+test('Resend へのリクエスト形式', async () => {
+  const calls = [];
+  const send = createMailer({ apiKey: 'k', from: 'AIボウ <no-reply@example.com>', fetchImpl: async (url, init) => { calls.push({ url, init }); return new Response('{}'); } });
+  await send({ to: 'a@example.com', subject: 's', text: 't' });
+  assert.equal(calls[0].url, 'https://api.resend.com/emails');
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer k');
+  assert.deepEqual(JSON.parse(calls[0].init.body).to, ['a@example.com']);
+  assert.equal(createMailer({ apiKey: '', from: '' }), null);
+});
+
+test('ヘルスチェック', async () => {
+  const app = createApp({ db: openDb(':memory:'), isProduction: false });
+  const res = await app.request('/healthz');
+  assert.equal(res.status, 200);
+  assert.equal(await res.text(), 'ok');
 });
 
 // ---- Waffo 決済 ----

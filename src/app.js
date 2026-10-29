@@ -18,6 +18,7 @@ import { companionRoutes } from './routes/companion.js';
 import { voiceRoutes } from './routes/voice.js';
 import { homeRoutes, touchCompanion } from './routes/home.js';
 import { officialOwnerId, OFFICIAL_EMAIL } from './seed.js';
+import { createMailer, loginMail } from './mail.js';
 
 const VISIBILITIES = ['public', 'unlisted', 'private'];
 const MAX_MESSAGE_CHARS = 2000;
@@ -25,7 +26,7 @@ const CHARACTER_LIMITS = { name: 50, tagline: 200, world_setting: 4000, profile:
 
 export function createApp({
   db, waffo = null, generateReply = defaultGenerateReply, generateText = defaultGenerateText,
-  realtime = null, isProduction = process.env.NODE_ENV === 'production',
+  realtime = null, isProduction = process.env.NODE_ENV === 'production', sendMail = createMailer(),
 }) {
   const app = new Hono();
 
@@ -44,6 +45,12 @@ export function createApp({
     return chara;
   };
 
+  // Render などのヘルスチェック用。DB に触れて、ディスクが使えることも確かめる。
+  app.get('/healthz', (c) => {
+    db.prepare('SELECT 1').get();
+    return c.text('ok');
+  });
+
   // ---- 認証 ----
   app.post('/auth/login', async (c) => {
     const { email } = await c.req.json().catch(() => ({}));
@@ -51,9 +58,18 @@ export function createApp({
       || email.trim().toLowerCase() === OFFICIAL_EMAIL) {
       return c.json({ error: 'メールアドレスが正しくありません' }, 400);
     }
+    if (isProduction && !sendMail) return c.json({ error: 'ただいまログインを受け付けていません' }, 503);
     const link = createLoginLink(db, email.trim().toLowerCase());
-    // TODO: 本番ではメール送信サービス（Resend / SES など）でリンクを送る。
-    console.log(`[login link] ${email}: ${link}`);
+    if (sendMail) {
+      try {
+        await sendMail({ to: email.trim(), ...loginMail(link) });
+      } catch (err) {
+        console.error(err);
+        return c.json({ error: 'メールを送れませんでした。時間をおいてお試しください' }, 502);
+      }
+    }
+    // 本番ではリンクをログにも画面にも出さない（ログを見られる人がなりすませるため）
+    if (!isProduction) console.log(`[login link] ${email}: ${link}`);
     return c.json({ ok: true, ...(isProduction ? {} : { devLink: link }) });
   });
 

@@ -1,0 +1,66 @@
+# Render の Blueprint。Dashboard の「New → Blueprint」でこのリポジトリを選ぶと、下の構成で作られる。
+# 値が sync: false の環境変数は、作成時に Dashboard で入力する（鍵はここに書かない）。
+services:
+  - type: web
+    name: aibow
+    runtime: node
+    region: singapore          # 日本から一番近いリージョン
+    plan: starter              # 無料プランはスリープするうえディスクが使えないため不可
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    # SQLite の保存先。ディスクを付けたサービスは1台構成になり、デプロイ時に数十秒止まる
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DB_PATH
+        value: /var/data/aibow.db
+      # 独自ドメインを使うときだけ設定（未設定なら https://<name>.onrender.com を使う）
+      - key: BASE_URL
+        sync: false
+
+      # ログインメール（Resend）。本番ではこれがないとログインできない
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM            # 例: AIボウ <no-reply@your-domain.jp>（Resend で認証したドメイン）
+        sync: false
+
+      # 音声・声のお試し
+      - key: OPENAI_API_KEY
+        sync: false
+      # 文字チャットの LLM（OpenAI 互換。未設定ならモック返答）
+      - key: LLM_BASE_URL
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+
+      # Web Push（npx web-push generate-vapid-keys で作る）
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT       # 例: mailto:support@your-domain.jp
+        sync: false
+
+      # 決済（Waffo）。本番に切り替えるまでは sandbox のまま
+      - key: WAFFO_ENV
+        value: sandbox
+      - key: WAFFO_API_KEY
+        sync: false
+      - key: WAFFO_MERCHANT_ID
+        sync: false
+      - key: WAFFO_PRIVATE_KEY
+        sync: false
+      - key: WAFFO_PUBLIC_KEY
+        sync: false
+
+      - key: ADMIN_EMAILS
+        sync: false

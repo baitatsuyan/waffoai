@@ -43,14 +43,28 @@ npm start          # http://localhost:3000
 npm test
 ```
 
-API キーがなくても動きます。LLM 未設定ならモックで返答し、ログインリンクは画面に表示されます（本番では非表示）。
+API キーがなくても動きます。LLM 未設定ならモックで返答し、ログインリンクは画面に表示されます（本番ではメールで送り、画面にもログにも出しません）。
 音声は `OPENAI_API_KEY` を設定すると使えます。ブラウザのマイクは HTTPS か localhost でしか使えません。
+
+## Render へのデプロイ
+
+`render.yaml`（Blueprint）で、シンガポールリージョンの Web サービス（Starter）＋1GB のディスクを作ります。
+
+1. Render の Dashboard で **New → Blueprint** を選び、このリポジトリをつなぐ
+2. 入力を求められた環境変数（`sync: false` のもの）に値を入れる。最低限 `RESEND_API_KEY` と `MAIL_FROM`（ログイン用）、音声を使うなら `OPENAI_API_KEY`
+3. デプロイ後、`https://<サービス名>.onrender.com/healthz` が `ok` を返すことを確かめる
+4. Waffo Dashboard の通知先を `https://<公開URL>/api/waffo/webhook` に設定する
+
+- SQLite は `/var/data/aibow.db`（ディスク）に保存されます。ディスクの外に書いたファイルはデプロイのたびに消えます
+- ディスクを付けたサービスは1台構成で、デプロイ中は数十秒止まります。利用者が増えたら DB を Postgres に移して複数台にする
+- ディスクは Render が毎日スナップショットを取ります。念のため、定期的に DB のバックアップも取ってください
 
 ## 環境変数
 
 | 変数 | 用途 |
 |---|---|
-| `BASE_URL` | 公開 URL（ログインリンク・決済後の戻り先・Webhook の URL） |
+| `BASE_URL` | 公開 URL（ログインリンク・決済後の戻り先・Webhook の URL）。Render では未設定なら `RENDER_EXTERNAL_URL` を使う |
+| `RESEND_API_KEY` / `MAIL_FROM` | ログインリンクのメール送信（[Resend](https://resend.com)）。本番ではこれがないとログインできない |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 互換 API。例：OpenRouter は `https://openrouter.ai/api/v1`、BytePlus ModelArk は管理画面に表示されるエンドポイント |
 | `OPENAI_API_KEY` | リアルタイム音声（OpenAI Realtime API）と声のお試し（TTS） |
 | `REALTIME_MODEL` / `TRANSCRIBE_MODEL` / `TRANSLATE_MODEL` / `TTS_MODEL` | 既定は `gpt-realtime-2.1` / `gpt-live-transcribe` / `gpt-realtime-translate` / `gpt-4o-mini-tts` |
@@ -134,7 +148,6 @@ test/                 node:test によるテスト
 
 ## 本番公開前にやること
 
-- メール送信サービスをつないで、ログインリンクをメールで送る（`src/app.js` の TODO）
 - `public/legal.html` の〔 〕を実際の事業者情報で埋める。利用規約とプライバシーポリシーを用意する
 - 通報機能とコンテンツモデレーション（決済事業者の規約への対応）
 - Waffo の本番環境：加盟店公開鍵の登録、返金・チャージバック通知 URL の設定、受け入れテスト（Waffo の Integration acceptance criteria）
