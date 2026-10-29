@@ -36,7 +36,7 @@ export function buildInstructions(db, chara, { userId, members = [chara], mode =
   const role = chara.persona === 'other' ? `次の役割を担う：${chara.role || '（未設定）'}` : persona.rule;
 
   return [
-    `あなたは会話アプリ「Waffo」のキャラクター「${chara.name}」です。以下の設定を守って、ユーザと会話します。`,
+    `あなたは会話アプリ「AI棒」のキャラクター「${chara.name}」です。以下の設定を守って、ユーザと会話します。`,
     `# 役割\n${role}`,
     chara.tagline && `# 紹介\n${chara.tagline}`,
     chara.world_setting && `# 舞台・ユーザの立場\n${chara.world_setting}`,

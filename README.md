@@ -1,4 +1,4 @@
-# Waffo
+# AI棒（AI-BOW）
 
 声で話せる AI キャラクターの UGC プラットフォームです。クリエイターがキャラを公開し、ユーザはそのキャラと声や文字で話します。
 キャラは「基本ペルソナ（役割）」×「個性」でできていて、トレーナー・資格の先生・秘書・恋人・語学パートナー・同時通訳者などの役割は、
@@ -60,7 +60,7 @@ API キーがなくても動きます。LLM 未設定ならモックで返答し
 | `WAFFO_PUBLIC_KEY` | Waffo の公開鍵（Dashboard の Integration に表示）。Webhook の署名検証に使う |
 | `WAFFO_ENV` | `sandbox`（既定）または `production` |
 | `ADMIN_EMAILS` | 運営用レポートを見られるメールアドレス（カンマ区切り） |
-| `DB_PATH` | SQLite ファイル（既定 `data/waffo.db`） |
+| `DB_PATH` | SQLite ファイル（既定 `data/aibow.db`） |
 | `NODE_ENV=production` | 本番モード（ログインリンクを画面に出さない） |
 
 ### リアルタイム音声のしくみ
@@ -78,7 +78,7 @@ API キーがなくても動きます。LLM 未設定ならモックで返答し
 - グループは参加キャラ数ぶん課金（聞き取りの耳は無料）。キャラの道具はデータチャネルの function call をサーバに転送して実行する
 - 通訳は短命のクライアントキーで翻訳セッションにつなぐ（翻訳セッションはサーバから切れないため、キーは60秒で失効）
 
-### Waffo 決済
+### 決済（決済代行：Waffo）
 
 [Waffo の Node.js SDK](https://waffo.com/docs/en/developer-docs/sdk/nodejs.md) で連携しています。
 

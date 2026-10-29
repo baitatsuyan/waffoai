@@ -58,7 +58,7 @@ export function createRealtimeClient({ apiKey = env.openaiApiKey, fetchImpl = fe
 }
 
 // 個人を特定しない安定した識別子（OpenAI の不正利用対策用）
-export const safetyIdFor = (userId) => createHash('sha256').update(`waffo:${userId}`).digest('hex').slice(0, 32);
+export const safetyIdFor = (userId) => createHash('sha256').update(`aibow:${userId}`).digest('hex').slice(0, 32);
 
 // 1対1：マイク音声を直接キャラに聞かせる speech-to-speech。割り込み（話し始めたら止まる）はモデル側の VAD で行う。
 export function directSession(db, chara, userId) {

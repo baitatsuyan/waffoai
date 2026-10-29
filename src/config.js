@@ -3,12 +3,12 @@
 export const env = {
   port: Number(process.env.PORT ?? 3000),
   baseUrl: process.env.BASE_URL ?? 'http://localhost:3000',
-  dbPath: process.env.DB_PATH ?? 'data/waffo.db',
+  dbPath: process.env.DB_PATH ?? 'data/aibow.db',
   // LLM: OpenAI 互換 API（OpenRouter / BytePlus ModelArk / DeepSeek など）。未設定ならモック。
   llmBaseUrl: process.env.LLM_BASE_URL ?? '',
   llmApiKey: process.env.LLM_API_KEY ?? '',
   llmModel: process.env.LLM_MODEL ?? '',
-  // Waffo 決済。鍵は Waffo Dashboard の Integration で発行・登録する。
+  // 決済（決済代行：Waffo）。鍵は Waffo Dashboard の Integration で発行・登録する。
   waffoApiKey: process.env.WAFFO_API_KEY ?? '',
   waffoPrivateKey: process.env.WAFFO_PRIVATE_KEY ?? '',
   waffoPublicKey: process.env.WAFFO_PUBLIC_KEY ?? '',

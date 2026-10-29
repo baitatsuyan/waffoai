@@ -32,10 +32,10 @@ setInterval(async () => {
 }, 60_000).unref();
 
 serve({ fetch: app.fetch, port: env.port }, (info) => {
-  console.log(`Waffo listening on http://localhost:${info.port}`);
+  console.log(`AI棒 (AI-BOW) listening on http://localhost:${info.port}`);
   if (!env.llmBaseUrl) console.log('LLM_BASE_URL 未設定: モック返答で動作します');
   if (!realtime) console.log('OPENAI_API_KEY 未設定: 音声トークは使えません（文字のみ）');
   if (!pushReady) console.log('VAPID 鍵が未設定: キャラからのメッセージは受信箱のみ（プッシュ通知なし）');
-  if (!waffo) console.log('Waffo の鍵が未設定: 決済は使えません（WAFFO_API_KEY など）');
-  else console.log(`Waffo: ${env.waffoEnvironment} 環境に接続します`);
+  if (!waffo) console.log('決済の鍵が未設定: 決済は使えません（WAFFO_API_KEY など）');
+  else console.log(`決済: ${env.waffoEnvironment} 環境に接続します`);
 });

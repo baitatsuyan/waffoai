@@ -266,7 +266,7 @@ export function createApp({
     c.json({ plans: PLANS, pointPacks: POINT_PACKS, pointCosts: POINT_COSTS, creatorReward: CREATOR_REWARD }));
 
   const requireWaffo = async (c, next) => {
-    if (!waffo) return c.json({ error: '決済は現在準備中です（Waffo の鍵が未設定）' }, 503);
+    if (!waffo) return c.json({ error: '決済は現在準備中です（決済サービスの鍵が未設定）' }, 503);
     await next();
   };
   app.use('/api/billing/*', async (c, next) => (c.req.path === '/api/billing/catalog' ? next() : requireWaffo(c, next)));

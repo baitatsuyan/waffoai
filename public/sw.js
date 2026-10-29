@@ -6,10 +6,10 @@ self.addEventListener('push', (event) => {
   } catch {
     data = { body: event.data?.text() };
   }
-  event.waitUntil(self.registration.showNotification(data.title ?? 'Waffo', {
+  event.waitUntil(self.registration.showNotification(data.title ?? 'AI棒', {
     body: data.body ?? '',
     data: { url: data.url ?? '/' },
-    tag: 'waffo-message',
+    tag: 'aibow-message',
     renotify: true,
   }));
 });

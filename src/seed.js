@@ -1,7 +1,8 @@
 // 公式の相棒（運営が用意するキャラ）。クリエイターの投稿が増えるまでの、一般ユーザーの入り口になる。
 // 起動のたびに呼んでよい（名前で照合し、なければ作る）。
 
-export const OFFICIAL_EMAIL = 'official@waffo.local';
+export const OFFICIAL_EMAIL = 'official@aibow.local';
+const OLD_OFFICIAL_EMAIL = 'official@waffo.local'; // 旧サービス名のときに作った公式アカウント
 
 const OFFICIAL = [
   {
@@ -43,8 +44,9 @@ const OFFICIAL = [
 ];
 
 export function ensureOfficialCharacters(db) {
+  db.prepare(`UPDATE users SET email = ?, display_name = 'AI棒公式' WHERE email = ?`).run(OFFICIAL_EMAIL, OLD_OFFICIAL_EMAIL);
   let owner = db.prepare('SELECT id FROM users WHERE email = ?').get(OFFICIAL_EMAIL)?.id;
-  owner ??= Number(db.prepare(`INSERT INTO users (email, display_name) VALUES (?, 'Waffo公式')`).run(OFFICIAL_EMAIL).lastInsertRowid);
+  owner ??= Number(db.prepare(`INSERT INTO users (email, display_name) VALUES (?, 'AI棒公式')`).run(OFFICIAL_EMAIL).lastInsertRowid);
   const find = db.prepare('SELECT id FROM characters WHERE creator_id = ? AND name = ?');
   const insert = db.prepare(`
     INSERT INTO characters (creator_id, name, tagline, profile, opening, tags, visibility, persona, voice)

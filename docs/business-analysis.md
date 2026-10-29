@@ -63,7 +63,7 @@ nyaan.co はタグライン・ページ構成・お知らせ（`2026-07-summer-c
 | 用途 | 選択肢 | 特徴 |
 |---|---|---|
 | 会話 LLM | **OpenRouter** | 1つの API キーで多数のモデルを切り替えられる。手数料が上乗せされる |
-| 会話 LLM | **BytePlus ModelArk**（Seed 系） | OpenAI 互換 API。Waffo は BytePlus のパートナー契約があるため、仕入れ条件で有利な可能性 |
+| 会話 LLM | **BytePlus ModelArk**（Seed 系） | OpenAI 互換 API。自社に BytePlus のパートナー契約があるため、仕入れ条件で有利な可能性 |
 | 会話 LLM | DeepSeek・Qwen などの直接 API | 原価が最も安い部類 |
 | 会話 LLM | 自前 GPU で vLLM | 量が増えたら最安。初期は割高で運用負荷も大きい |
 | 画像 | fal.ai / Replicate / BytePlus Seedream | 1枚あたりの従量課金 |
