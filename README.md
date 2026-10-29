@@ -47,7 +47,7 @@ npm start          # http://localhost:3000
 npm test
 ```
 
-API キーがなくても動きます。LLM 未設定ならモックで返答し、ログインリンクは画面に表示されます（本番ではメールで送り、画面にもログにも出しません）。
+API キーがなくても動きます。LLM も `OPENAI_API_KEY` も未設定ならモックで返答し（メインページのお試しは台本）、ログインリンクは画面に表示されます（本番ではメールで送り、画面にもログにも出しません）。
 音声は `OPENAI_API_KEY` を設定すると使えます。ブラウザのマイクは HTTPS か localhost でしか使えません。
 
 ## Render へのデプロイ
@@ -69,8 +69,9 @@ API キーがなくても動きます。LLM 未設定ならモックで返答し
 |---|---|
 | `BASE_URL` | 公開 URL（ログインリンク・決済後の戻り先・Webhook の URL）。Render では未設定なら `RENDER_EXTERNAL_URL` を使う |
 | `RESEND_API_KEY` / `MAIL_FROM` | ログインリンクのメール送信（[Resend](https://resend.com)）。本番ではこれがないとログインできない |
-| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 互換 API。例：OpenRouter は `https://openrouter.ai/api/v1`、BytePlus ModelArk は管理画面に表示されるエンドポイント |
-| `OPENAI_API_KEY` | リアルタイム音声（OpenAI Realtime API）と声のお試し（TTS） |
+| `OPENAI_API_KEY` | リアルタイム音声（OpenAI Realtime API）、声のお試し（TTS）。`LLM_*` が未設定なら文字の会話も OpenAI（`gpt-6-luna`）で行う |
+| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 文字の会話を別の OpenAI 互換 API にするとき。例：OpenRouter は `https://openrouter.ai/api/v1`。OpenAI のままモデルだけ変えるなら `LLM_MODEL` だけ |
+| `LLM_REASONING_EFFORT` | OpenAI の推論モデルの考える量（既定 `low`。`none` にするとさらに速い） |
 | `REALTIME_MODEL` / `TRANSCRIBE_MODEL` / `TRANSLATE_MODEL` / `TTS_MODEL` | 既定は `gpt-realtime-2.1` / `gpt-live-transcribe` / `gpt-realtime-translate` / `gpt-4o-mini-tts` |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Web Push（`npx web-push generate-vapid-keys` で作る）。なければ受信箱のみ |
 | `WAFFO_API_KEY` / `WAFFO_MERCHANT_ID` | Waffo の API キーと加盟店 ID |

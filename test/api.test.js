@@ -267,3 +267,16 @@ test('Waffo: サブスク申し込み・二重加入の拒否・解約', async (
   assert.equal(me.subscription.status, 'canceled');
   assert.equal(me.usage.plan, 'plus'); // 期間末までは使える
 });
+
+test('LLM の設定：LLM_* がなくても OPENAI_API_KEY があれば OpenAI を使う', async () => {
+  const { llmSettings } = await import('../src/config.js');
+  assert.deepEqual(llmSettings({ OPENAI_API_KEY: 'sk' }), {
+    llmBaseUrl: 'https://api.openai.com/v1', llmApiKey: 'sk', llmModel: 'gpt-6-luna', llmReasoningEffort: 'low', llmIsOpenAI: true,
+  });
+  assert.equal(llmSettings({ OPENAI_API_KEY: 'sk', LLM_MODEL: 'gpt-6.1-terra', LLM_REASONING_EFFORT: 'none' }).llmModel, 'gpt-6.1-terra');
+  const other = llmSettings({ OPENAI_API_KEY: 'sk', LLM_BASE_URL: 'https://openrouter.ai/api/v1', LLM_API_KEY: 'or', LLM_MODEL: 'x' });
+  assert.equal(other.llmApiKey, 'or');
+  assert.equal(other.llmIsOpenAI, false);
+  assert.equal(other.llmReasoningEffort, '');
+  assert.equal(llmSettings({}).llmBaseUrl, '');
+});

@@ -1,14 +1,27 @@
 // サービス全体の料金・上限設定。数値はここだけで管理する。
 
+const OPENAI_BASE_URL = 'https://api.openai.com/v1';
+export function llmSettings(e) {
+  const llmBaseUrl = e.LLM_BASE_URL || (e.OPENAI_API_KEY ? OPENAI_BASE_URL : '');
+  const isOpenAI = llmBaseUrl.replace(/\/$/, '') === OPENAI_BASE_URL;
+  return {
+    llmBaseUrl,
+    llmApiKey: e.LLM_API_KEY || (isOpenAI ? e.OPENAI_API_KEY ?? '' : ''),
+    llmModel: e.LLM_MODEL || (isOpenAI ? 'gpt-6-luna' : ''),
+    // OpenAI の推論モデル向け：考える量（low なら返事が速い）。ほかの API では送らない
+    llmReasoningEffort: e.LLM_REASONING_EFFORT || (isOpenAI ? 'low' : ''),
+    llmIsOpenAI: isOpenAI,
+  };
+}
+
 export const env = {
   port: Number(process.env.PORT ?? 3000),
   // Render では RENDER_EXTERNAL_URL（https://xxx.onrender.com）が自動で入る。独自ドメインにしたら BASE_URL で上書きする
   baseUrl: process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000',
   dbPath: process.env.DB_PATH ?? 'data/aibow.db',
-  // LLM: OpenAI 互換 API（OpenRouter / BytePlus ModelArk / DeepSeek など）。未設定ならモック。
-  llmBaseUrl: process.env.LLM_BASE_URL ?? '',
-  llmApiKey: process.env.LLM_API_KEY ?? '',
-  llmModel: process.env.LLM_MODEL ?? '',
+  // LLM: OpenAI 互換 API（OpenAI / OpenRouter / BytePlus ModelArk / DeepSeek など）。
+  // LLM_* が未設定でも OPENAI_API_KEY があれば OpenAI を使う。どちらもなければモック。
+  ...llmSettings(process.env),
   // 決済（決済代行：Waffo）。鍵は Waffo Dashboard の Integration で発行・登録する。
   waffoApiKey: process.env.WAFFO_API_KEY ?? '',
   waffoPrivateKey: process.env.WAFFO_PRIVATE_KEY ?? '',

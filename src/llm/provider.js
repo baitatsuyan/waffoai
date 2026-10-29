@@ -48,11 +48,18 @@ async function chatCompletion(body) {
   const res = await fetch(`${env.llmBaseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.llmApiKey}` },
-    body: JSON.stringify({ model: env.llmModel, max_tokens: 600, temperature: 0.9, ...body }),
+    body: JSON.stringify({ model: env.llmModel, ...samplingParams(), ...body }),
     signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) throw new Error(`LLM API error ${res.status}: ${(await res.text()).slice(0, 300)}`);
   return res.json();
+}
+
+// OpenAI の推論モデルは max_tokens と temperature を受け付けないため、出力上限の名前を変え、考える量を指定する。
+// 上限には考える分も含まれるので多めに取る。
+function samplingParams() {
+  if (env.llmIsOpenAI) return { max_completion_tokens: 2000, ...(env.llmReasoningEffort ? { reasoning_effort: env.llmReasoningEffort } : {}) };
+  return { max_tokens: 600, temperature: 0.9 };
 }
 
 // API キー未設定時の開発用。課金や画面の動作確認に使う。

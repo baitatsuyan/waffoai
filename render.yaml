@@ -31,10 +31,10 @@ services:
       - key: MAIL_FROM            # 例: AIボウ <no-reply@your-domain.jp>（Resend で認証したドメイン）
         sync: false
 
-      # 音声・声のお試し
+      # 音声・声のお試し。LLM_* が未設定なら文字の会話も OpenAI（gpt-6-luna）で行う
       - key: OPENAI_API_KEY
         sync: false
-      # 文字チャットの LLM（OpenAI 互換。未設定ならモック返答）
+      # 文字の会話を別の OpenAI 互換 API にするときだけ設定
       - key: LLM_BASE_URL
         sync: false
       - key: LLM_API_KEY
