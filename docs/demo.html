@@ -1,0 +1,2103 @@
+<title>AIボウ デモ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: 1カラムのアプリ。上部に固定ナビ、本文は最大 760px。コーチ画面は 会話／プラン／記録／進捗 のタブで切り替える。 */
+:root {
+  --bg: #f2f4f7;
+  --surface: #ffffff;
+  --ink: #1d2433;
+  --muted: #667085;
+  --line: #dde2ea;
+  --accent: #d6456b;
+  --accent-ink: #ffffff;
+  --accent-soft: #fbe7ed;
+  --coach: #1f7a6d;
+  --coach-soft: #e2f2ef;
+  --bubble-me: #e5ecf7;
+  --ok: #2f7d5b;
+  --ng: #c23b3b;
+  --font-display: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", "Noto Sans JP", sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151b; --surface: #1b2029; --ink: #e6e9ef; --muted: #98a2b3; --line: #2c3340;
+    --accent: #f06f92; --accent-ink: #1a0d12; --accent-soft: #3a1f29; --coach: #5cc2b2; --coach-soft: #1a3330;
+    --bubble-me: #24324a; --ok: #5cc595; --ng: #f07a7a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151b; --surface: #1b2029; --ink: #e6e9ef; --muted: #98a2b3; --line: #2c3340;
+  --accent: #f06f92; --accent-ink: #1a0d12; --accent-soft: #3a1f29; --coach: #5cc2b2; --coach-soft: #1a3330;
+  --bubble-me: #24324a; --ok: #5cc595; --ng: #f07a7a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.75; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+button { font: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.demo-band { background: var(--accent-soft); color: var(--ink); font-size: 13px; padding-block: 6px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); text-align: center; }
+.topbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.topbar-inner { max-width: 760px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.logo { font-family: var(--font-display); font-weight: 700; font-size: 1.45rem; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
+.nav { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.nav button { background: none; border: 0; color: var(--ink); padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+.nav button[aria-current="page"] { background: var(--accent-soft); }
+.pts { font-family: var(--font-mono); font-size: 13px; color: var(--muted); padding-left: 6px; font-variant-numeric: tabular-nums; }
+
+main { max-width: 760px; margin: 0 auto; padding-block: 24px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 20px; }
+main > * { min-width: 0; }
+h1 { font-family: var(--font-display); font-size: 1.6rem; line-height: 1.35; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--font-display); font-size: 1.15rem; margin: 0; text-wrap: balance; }
+h3 { font-size: 1rem; margin: 0; }
+p { margin: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.label { font-size: 12px; letter-spacing: .06em; color: var(--muted); font-weight: 700; }
+.stack { display: grid; gap: 10px; }
+.stack > * { min-width: 0; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+.btn { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 999px; padding: 8px 18px; cursor: pointer; font-weight: 700; white-space: nowrap; }
+.btn.coach { background: var(--coach); color: var(--surface); }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
+.btn.small { padding: 4px 12px; font-size: 13px; }
+.btn:disabled { opacity: .45; cursor: default; }
+input, textarea, select { width: 100%; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+textarea { min-height: 84px; resize: vertical; }
+
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.chip.coach { border-color: var(--coach); color: var(--coach); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.chara { text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; cursor: pointer; color: var(--ink); display: grid; gap: 6px; min-width: 0; align-content: start; }
+.chara:hover { border-color: var(--accent); }
+.chara.is-coach:hover { border-color: var(--coach); }
+.avatar { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-display); font-weight: 700; color: #fff; font-size: 1.1rem; flex: none; }
+.chara-head { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.chara-name { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; }
+.meta { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.section-head { display: grid; gap: 2px; }
+.coach-intro { background: var(--coach-soft); border-radius: 16px; padding: 16px; display: grid; gap: 12px; }
+
+.block { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; white-space: pre-wrap; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+
+.meter-bar { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.meter-fill { height: 100%; background: var(--accent); }
+.meter-fill.coach { background: var(--coach); }
+.status { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; display: grid; gap: 8px; font-size: 13px; }
+.status-line { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.charged { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.charged.points { color: var(--accent); }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; cursor: pointer; color: var(--muted); white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--coach); font-weight: 700; }
+
+.chat { display: flex; flex-direction: column; gap: 10px; }
+.bubble { max-width: 88%; padding: 10px 14px; border-radius: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bubble.ai { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+.bubble.me { align-self: flex-end; background: var(--bubble-me); border-bottom-right-radius: 4px; }
+.bubble.event { align-self: center; background: var(--coach-soft); color: var(--ink); font-size: 13px; border-radius: 10px; max-width: 100%; }
+.bubble .narr { color: var(--muted); font-style: italic; }
+.composer { position: sticky; bottom: 0; background: var(--bg); padding-block: 8px calc(10px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 8px; }
+.composer-row { display: flex; gap: 8px; align-items: flex-end; }
+.composer textarea { min-height: 48px; }
+.quick { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.quick button { flex: none; background: var(--surface); border: 1px solid var(--coach); color: var(--coach); border-radius: 999px; padding: 3px 12px; font-size: 13px; cursor: pointer; }
+.typing { color: var(--muted); font-size: 13px; }
+
+.plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.plan { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: grid; gap: 6px; align-content: start; }
+.plan.current { border-color: var(--accent); }
+.price { font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+.badge { justify-self: start; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); }
+.badge.coach { background: var(--coach); color: var(--surface); }
+
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tr:last-child td, tr:last-child th { border-bottom: 0; }
+td.num, th.num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.log-input { width: 76px; padding: 4px 8px; text-align: right; font-family: var(--font-mono); }
+.up { color: var(--ok); font-family: var(--font-mono); font-size: 12px; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: grid; gap: 2px; }
+.stat-value { font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.chart { width: 100%; height: auto; display: block; }
+.chart text { fill: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+
+.option { text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; cursor: pointer; color: var(--ink); }
+.option:disabled { cursor: default; }
+.option.correct { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, var(--surface)); }
+.option.wrong { border-color: var(--ng); background: color-mix(in srgb, var(--ng) 12%, var(--surface)); }
+.explain { font-size: 14px; border-left: 3px solid var(--coach); padding-left: 10px; }
+.area-bar { display: grid; grid-template-columns: 6.5em 1fr 3.5em; gap: 8px; align-items: center; font-size: 14px; }
+.area-bar .meter-bar { height: 10px; }
+
+.list { display: grid; gap: 6px; }
+.item { display: flex; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; min-width: 0; }
+.item > .grow { flex: 1; min-width: 0; }
+.item input[type="checkbox"] { width: auto; flex: none; }
+.item .time { font-family: var(--font-mono); font-size: 13px; color: var(--coach); min-width: 3.4em; flex: none; }
+.item.done .grow { text-decoration: line-through; color: var(--muted); }
+.mini { background: none; border: 0; color: var(--muted); font-size: 12px; cursor: pointer; padding: 0; text-decoration: underline; }
+.bubble-tools { display: flex; gap: 12px; margin-top: 6px; }
+.tr { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.fix { display: grid; gap: 2px; text-align: left; }
+.fix .wrong { color: var(--ng); text-decoration: line-through; }
+.fix .right { color: var(--ok); font-weight: 700; }
+.switch { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.switch input[type="checkbox"], .switch input[type="time"] { width: auto; }
+.flash { text-align: center; font-family: var(--font-display); font-size: 1.25rem; padding-block: 18px; }
+.goal { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.goal .mark { width: 1.4em; height: 1.4em; border-radius: 50%; border: 1.5px solid var(--line); display: grid; place-items: center; font-size: 11px; flex: none; color: transparent; }
+.goal.done .mark { background: var(--coach); border-color: var(--coach); color: var(--surface); }
+.preview { background: var(--bg); border-radius: 12px; padding: 10px 14px; white-space: pre-wrap; }
+.talk { display: grid; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+.members { display: flex; gap: 6px; flex-wrap: wrap; }
+.member { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 3px 10px 3px 3px; cursor: pointer; font-size: 13px; }
+.member .avatar { width: 24px; height: 24px; font-size: 12px; }
+.member[aria-pressed="true"] { border-color: var(--coach); background: var(--coach-soft); font-weight: 700; }
+.talk-log { display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow-y: auto; padding: 4px 2px; }
+.who { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.who .avatar { width: 20px; height: 20px; font-size: 11px; }
+.mic { width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--coach); color: var(--surface); font-weight: 700; cursor: pointer; flex: none; font-size: 13px; }
+.mic.on { background: var(--ng); }
+@media (prefers-reduced-motion: no-preference) { .mic.on { animation: pulse 1.2s ease-in-out infinite; } @keyframes pulse { 50% { transform: scale(1.06); } } }
+.ai-state { font-size: 12px; color: var(--muted); }
+.ai-state b { color: var(--coach); }
+.greeting { display: grid; gap: 6px; }
+.greeting h1 { font-size: 1.8rem; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: grid; gap: 10px; }
+.panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.linkish { background: none; border: 0; color: var(--coach); cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }
+.message { display: block; width: 100%; text-align: left; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; color: var(--ink); }
+.message.unread { border-color: var(--accent); }
+.when { font-family: var(--font-mono); font-size: 13px; color: var(--coach); min-width: 6.5em; flex: none; }
+.companion { display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; min-width: 0; align-content: start; }
+.companion .status-text { font-size: 13px; color: var(--muted); margin: 0; }
+.pick { text-align: left; background: var(--surface); border: 2px solid var(--line); border-radius: 14px; padding: 14px; cursor: pointer; color: var(--ink); display: grid; gap: 6px; min-width: 0; align-content: start; }
+.pick[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.pick .check { justify-self: start; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); }
+.features { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.features div { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; font-size: 13px; }
+.features b { display: block; font-size: 14px; margin-bottom: 2px; }
+.nav .badge-dot { display: inline-block; min-width: 1.4em; padding: 0 5px; margin-left: 3px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 11px; text-align: center; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 999px; font-size: 14px; z-index: 20; max-width: calc(100% - 32px); text-align: center; }
+.empty { color: var(--muted); padding: 20px; text-align: center; border: 1px dashed var(--line); border-radius: 14px; }
+.example { font-size: 11px; color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; padding: 0 6px; }
+@media (prefers-reduced-motion: no-preference) { .bubble { animation: pop .18s ease-out; } @keyframes pop { from { transform: translateY(4px); opacity: .6; } } }
+</style>
+
+<div class="demo-band">操作感を確かめるデモです。AIを許可すると返答をAI（Claude）が作ります（あなたのClaude利用枠を使います）。決済は行われません。</div>
+<header class="topbar">
+  <div class="topbar-inner">
+    <button class="logo" id="logo" type="button">AIボウ</button>
+    <nav class="nav" id="nav"></nav>
+  </div>
+</header>
+<main id="view"></main>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+// =====================================================================
+// 料金設定（本実装 src/config.js と同じ数値）
+// =====================================================================
+const PLANS = {
+  free: { name: 'Free', month: 0, msgs: 10, voice: 5, per: '日', bonus: 0 },
+  plus: { name: 'Plus', month: 980, year: 10000, msgs: 3000, voice: 1500, per: '月', bonus: 300 },
+  premium: { name: 'Premium', month: 1500, year: 15000, msgs: 6000, voice: 3000, per: '月', bonus: 600 },
+  pro: { name: 'Pro', month: 3000, year: 30000, msgs: 30000, voice: 7500, per: '月', bonus: 1500 },
+};
+const PACKS = [[300, 300], [500, 510], [1000, 1030], [3000, 3150], [5000, 5300], [10000, 11000]];
+const COST_PER_MSG = 1;
+const REWARD_SHARE = 0.2;
+const COLORS = ['#d6456b', '#3b7ea1', '#7a5bc4', '#2f7d5b', '#c2741f', '#4f5d75'];
+
+// =====================================================================
+// 日付ヘルパ
+// =====================================================================
+const DAY = 86400000;
+const today = new Date(); today.setHours(0, 0, 0, 0);
+const daysAgo = (n) => new Date(today.getTime() - n * DAY);
+const md = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const weekStart = (d) => { const x = new Date(d); const wd = (x.getDay() + 6) % 7; x.setDate(x.getDate() - wd); x.setHours(0, 0, 0, 0); return x; };
+
+// =====================================================================
+// 基本ペルソナ（役割テンプレート）
+// キャラの個性（名前・口調）とは別に、役割ごとに「道具」を持つ。
+// =====================================================================
+const PERSONAS = {
+  chat: { label: '会話のみ', tabs: [] },
+  trainer: { label: 'パーソナルトレーナー', tabs: [['chat', '会話'], ['plan', 'メニュー'], ['log', '今日の記録'], ['progress', '進捗']] },
+  tutor: { label: '資格の先生', tabs: [['chat', '会話'], ['plan', '学習計画'], ['quiz', '小テスト'], ['progress', '進捗']] },
+  secretary: { label: '秘書', tabs: [['chat', '会話'], ['today', '今日'], ['tasks', 'タスク'], ['memo', 'メモ要約']] },
+  partner: { label: '恋人', tabs: [['chat', '会話'], ['memories', 'ふたりの記録'], ['messages', 'メッセージ']] },
+  language: { label: '語学パートナー', tabs: [['chat', '会話'], ['scenes', 'シーン'], ['cards', '単語帳'], ['progress', '進捗']] },
+  interpreter: { label: '同時通訳者', tabs: [['chat', '通訳']] },
+  other: { label: 'その他（役割を自由に設定）', tabs: [] },
+};
+const PERSONA_COLOR = { trainer: '#1f7a6d', tutor: '#3b6fb6', secretary: '#5b5f97', partner: '#d6456b', language: '#c2741f', interpreter: '#2b7a99' };
+// 記録や道具を持つ役割（タブつきの画面になる）
+const hasTools = (c) => PERSONAS[c.persona].tabs.length > 0;
+const LANGS = { en: { label: '英語', tts: 'en-US' }, zh: { label: '中国語', tts: 'zh-CN' }, ko: { label: '韓国語', tts: 'ko-KR' } };
+// かなが含まれていれば日本語とみなす（中国語は漢字のみなので区別できる）
+const isJapanese = (t) => /[\u3040-\u30ff]/.test(t);
+const addDays = (n) => new Date(today.getTime() + n * DAY);
+const WD = '日月火水木金土';
+const dayLabel = (d) => { const n = Math.round((d - today) / DAY); return n === 0 ? '今日' : n === 1 ? '明日' : n === 2 ? '明後日' : `${md(d)}（${WD[d.getDay()]}）`; };
+
+// ---- 秘書：日付・時刻の読み取り（本番は LLM のツール呼び出しで構造化する） ----
+function parseDay(text) {
+  if (/明後日|あさって/.test(text)) return addDays(2);
+  if (/明日|あした/.test(text)) return addDays(1);
+  const w = text.match(/([月火水木金土日])曜/);
+  if (w) { let diff = (WD.indexOf(w[1]) - today.getDay() + 7) % 7; if (diff === 0) diff = 7; return addDays(diff); }
+  const d = text.match(/(\d{1,2})\/(\d{1,2})/);
+  if (d) { const x = new Date(today.getFullYear(), Number(d[1]) - 1, Number(d[2])); if (x < today) x.setFullYear(x.getFullYear() + 1); return x; }
+  if (/今日|きょう/.test(text)) return addDays(0);
+  return null;
+}
+function parseTime(text) {
+  const m = text.match(/(\d{1,2})時(半|(\d{1,2})分)?/) ?? text.match(/(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = m[2] === '半' ? 30 : Number(m[3] ?? (m[0].includes(':') ? m[2] : 0));
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+function cleanTitle(text) {
+  return text
+    .replace(/(今日|明日|明後日|あした|あさって|[月火水木金土日]曜日?|\d{1,2}\/\d{1,2}|\d{1,2}時(半|\d{1,2}分)?|\d{1,2}:\d{2})/g, '')
+    .replace(/(の予定)?を?(入れて(おいて|ください|ね)?|入れといて|登録して|タスクに(して|追加して|入れて)?|リマインドして|忘れないように(言って)?|までに|やることに(追加)?)/g, '')
+    .replace(/^[にのでから、\s]+|[をにはの、。\s]+$/g, '').trim();
+}
+const sameDay = (a, b) => iso(a) === iso(b);
+function freeSlots(sec, day) {
+  const busy = sec.events.filter((e) => sameDay(e.date, day)).map((e) => Number(e.time.slice(0, 2)));
+  const free = [];
+  for (let hh = 9; hh < 18; hh++) if (!busy.includes(hh) && !(hh === 12)) free.push(hh);
+  // 連続する時間をまとめる
+  const ranges = [];
+  for (const hh of free) { const last = ranges.at(-1); if (last && last[1] === hh) last[1] = hh + 1; else ranges.push([hh, hh + 1]); }
+  return ranges.map(([a, b]) => `${a}:00〜${b}:00`);
+}
+function briefing(sec, day = today) {
+  const evs = sec.events.filter((e) => sameDay(e.date, day)).sort((a, b) => a.time.localeCompare(b.time));
+  const tasks = sec.tasks.filter((t) => !t.done && t.due && t.due <= addDays(Math.round((day - today) / DAY) + 2));
+  return [
+    `${dayLabel(day)}の予定は${evs.length}件です。`,
+    ...evs.map((e) => `・${e.time} ${e.title}`),
+    tasks.length ? `\n期限が近いタスク：\n${tasks.map((t) => `・${t.title}（${dayLabel(t.due)}まで）`).join('\n')}` : '',
+    `\n空いている時間：${freeSlots(sec, day).join('、') || 'なし'}`,
+  ].filter(Boolean).join('\n');
+}
+function summarizeMemo(text) {
+  const lines = text.split('\n').map((l) => l.replace(/^[・\-\s*]+/, '').trim()).filter(Boolean);
+  return {
+    title: lines[0] ?? '',
+    decisions: lines.filter((l) => /決定|決まり|合意|確定/.test(l)),
+    todos: lines.filter((l) => /までに|期限|TODO|対応する|担当|宿題/.test(l)),
+  };
+}
+
+// ---- 語学：シーン練習と添削 ----
+const SCENES = {
+  cafe: { title: 'カフェで注文', opener: { en: 'Hi there! What can I get for you today?', ja: 'いらっしゃいませ！ご注文は何にしますか？' },
+    goals: [
+      { label: '飲み物を注文する', re: /(I'd like|I would like|can I (get|have)|I'll have|could I (get|have))/i, ask: { en: 'Sure! What would you like to drink?', ja: 'はい！お飲み物は何にしますか？' }, hint: "I'd like a latte, please." },
+      { label: 'サイズを伝える', re: /\b(small|medium|large|tall|grande|regular)\b/i, ask: { en: 'What size would you like? We have small, medium, and large.', ja: 'サイズはどうしますか？スモール、ミディアム、ラージがあります。' }, hint: 'Medium, please.' },
+      { label: '店内か持ち帰りかを伝える', re: /(for here|to go|take ?out|take ?away)/i, ask: { en: 'Is that for here or to go?', ja: '店内でお召し上がりですか？お持ち帰りですか？' }, hint: 'For here, please.' },
+    ],
+    done: { en: "Perfect! That'll be four fifty. Your drink will be ready at the end of the counter. Have a great day!", ja: 'かしこまりました！4ドル50セントです。カウンターの端でお渡しします。よい一日を！' } },
+  airport: { title: '空港でチェックイン', opener: { en: 'Good morning! May I see your passport, please?', ja: 'おはようございます。パスポートを拝見できますか？' },
+    goals: [
+      { label: 'パスポートを渡す', re: /(here you (go|are)|here it is|passport)/i, ask: { en: 'May I see your passport, please?', ja: 'パスポートを拝見できますか？' }, hint: 'Here you are.' },
+      { label: '窓側か通路側かを選ぶ', re: /\b(window|aisle)\b/i, ask: { en: 'Thank you. Would you like a window seat or an aisle seat?', ja: 'ありがとうございます。窓側と通路側、どちらがよろしいですか？' }, hint: 'A window seat, please.' },
+      { label: '荷物を預ける', re: /\b(check|bags?|luggage|suitcase|baggage)\b/i, ask: { en: 'Do you have any bags to check?', ja: 'お預けになるお荷物はありますか？' }, hint: 'Yes, I have one suitcase to check.' },
+    ],
+    done: { en: "All set! Here's your boarding pass. Boarding starts at 10:20 at Gate 32. Have a nice flight!", ja: '手続き完了です。こちらが搭乗券です。10時20分から32番ゲートで搭乗開始です。よい旅を！' } },
+  intro: { title: '職場で自己紹介', opener: { en: "Hi, I don't think we've met. I'm Emma from the marketing team.", ja: 'はじめまして、ですよね。マーケティングチームのエマです。' },
+    goals: [
+      { label: '名前を伝える', re: /(my name is|I'm [A-Z]|I am [A-Z]|call me)/, ask: { en: "Nice to meet you! What's your name?", ja: 'よろしくね！お名前は？' }, hint: "Nice to meet you. I'm Ken." },
+      { label: '仕事内容を伝える', re: /(I work|I'm (a|an|in charge|responsible)|I am (a|an|in charge|responsible)|my job|I handle)/i, ask: { en: 'Great to meet you. What do you do here?', ja: '会えてうれしいです。ここではどんなお仕事を？' }, hint: "I work in sales. I'm in charge of new clients." },
+      { label: '趣味を話す', re: /(hobby|hobbies|I like|I love|I enjoy|in my free time|on weekends)/i, ask: { en: 'Nice! What do you like to do outside of work?', ja: 'いいですね！仕事以外では何をするのが好きですか？' }, hint: 'I enjoy running on weekends.' },
+    ],
+    done: { en: "That sounds fun! Let's grab lunch sometime this week.", ja: '楽しそう！今週どこかでランチに行きましょう。' } },
+};
+const CORRECTIONS = [
+  [/\bI am agree\b/i, () => 'I agree', 'agree は動詞なので be動詞（am）は要りません。'],
+  [/\b(he|she|it) don't\b/i, (m) => `${m[1]} doesn't`, '主語が he / she / it のときは doesn\'t を使います。'],
+  [/\bgo to shopping\b/i, () => 'go shopping', '「買い物に行く」は go shopping。to は要りません。'],
+  [/\bdiscuss about\b/i, () => 'discuss', 'discuss は後ろに直接目的語をとるので about は要りません。'],
+  [/\bwent to (there|home)\b/i, (m) => `went ${m[1]}`, 'there / home は副詞なので to を付けません。'],
+  [/\bI'm boring\b/i, () => "I'm bored", '「退屈している」は bored。boring は「（物事が）退屈な」という意味です。'],
+  [/\bvery like\b/i, () => 'really like', '「とても好き」は really like。very は動詞を直接修飾しません。'],
+  [/(?:^|[.!?]\s+)i\b/, () => 'I', '一人称の I は文の途中でも大文字で書きます。'],
+];
+
+// ---- トレーナー：種目ライブラリとメニュー生成 ----
+const EXERCISES = {
+  gym: {
+    lower: [['スクワット', 40], ['ルーマニアンデッドリフト', 40], ['レッグプレス', 60]],
+    push: [['ベンチプレス', 30], ['ショルダープレス', 20]],
+    pull: [['ラットプルダウン', 30], ['シーテッドロー', 30]],
+  },
+  home: {
+    lower: [['自重スクワット', null], ['ブルガリアンスクワット', null], ['ヒップリフト', null]],
+    push: [['腕立て伏せ', null], ['パイクプッシュアップ', null]],
+    pull: [['タオルロー', null], ['バックエクステンション', null]],
+  },
+};
+const GOALS = {
+  muscle: { label: '筋肉をつけたい', sets: 3, reps: '8-10' },
+  fat: { label: '体脂肪を落としたい', sets: 3, reps: '12-15', cardio: '最後に有酸素20分（早歩き・バイク）' },
+  fitness: { label: '体力をつけたい', sets: 2, reps: '15-20', cardio: '最後に有酸素10分' },
+};
+// 痛みがあるときの置き換え（本番では LLM＋安全ルールで判断）
+const SWAPS = {
+  膝: { match: /スクワット|レッグプレス/, to: ['ヒップリフト', null] },
+  腰: { match: /デッドリフト|バックエクステンション|スクワット/, to: ['デッドバグ', null] },
+  肩: { match: /ショルダープレス|パイク|ベンチ/, to: ['サイドレイズ（軽め）', 5] },
+};
+
+function generateMenu(setup) {
+  const lib = EXERCISES[setup.place];
+  const g = GOALS[setup.goal];
+  const sets = g.sets + (setup.level === 'intermediate' ? 1 : 0);
+  const item = ([name, w]) => ({ ex: name, sets, reps: g.reps, weight: w });
+  const plank = { ex: 'プランク', sets: 2, reps: '30秒', weight: null };
+  const L = lib.lower, P = lib.push, U = lib.pull;
+  const layouts = {
+    2: [['全身 A', [L[0], P[0], U[0]]], ['全身 B', [L[1], P[1], U[1]]]],
+    3: [['下半身', [L[0], L[1], L[2]]], ['上半身', [P[0], U[0], P[1], U[1]]], ['全身', [L[0], P[0], U[1]]]],
+    4: [['上半身 A', [P[0], U[0], P[1]]], ['下半身 A', [L[0], L[1]]], ['上半身 B', [P[1], U[1], P[0]]], ['下半身 B', [L[2], L[0]]]],
+  };
+  return layouts[setup.days].map(([name, list]) => ({ name, items: [...list.map(item), plank], cardio: g.cardio ?? null }));
+}
+
+const topReps = (reps) => { const m = String(reps).match(/(\d+)\D*$/); return m ? Number(m[1]) : null; };
+
+// 前回の記録から今日の目標を決める（漸進性過負荷：上限回数をこなせたら +2.5kg）
+function suggestFor(coach, item) {
+  const last = [...coach.logs].reverse().flatMap((l) => l.items).find((x) => x.ex === item.ex);
+  if (!last) return { weight: item.weight, reps: topReps(item.reps) ?? '', note: '初回' };
+  const top = topReps(item.reps);
+  if (item.weight != null && last.weight != null) {
+    const up = top && last.reps >= top;
+    return { weight: up ? last.weight + 2.5 : last.weight, reps: up ? Number(String(item.reps).split('-')[0]) : last.reps, note: up ? `前回 ${last.weight}kg×${last.reps} → +2.5kg` : `前回 ${last.weight}kg×${last.reps}` };
+  }
+  if (String(item.reps).includes('秒')) return { weight: null, reps: item.reps, note: '' };
+  return { weight: null, reps: (last.reps ?? 0) + 1, note: `前回 ${last.reps}回 → +1回` };
+}
+
+// ---- 先生：日商簿記3級の問題（分野つき） ----
+const QUESTIONS = [
+  { area: '仕訳', q: '商品100,000円を掛けで仕入れた。貸方の勘定科目は？', options: ['売掛金', '買掛金', '未払金', '仕入'], answer: 1,
+    explain: '商品を掛けで仕入れると、あとで代金を払う義務（負債）が生まれるので貸方は「買掛金」。借方は「仕入」です。' },
+  { area: '仕訳', q: '商品を売り上げ、代金は掛けとした。借方の勘定科目は？', options: ['売掛金', '買掛金', '前受金', '売上'], answer: 0,
+    explain: '掛け売上では、あとで代金を受け取る権利（資産）として借方に「売掛金」。貸方は「売上」です。' },
+  { area: '仕訳', q: '備品を購入し、代金は月末に支払うことにした。貸方の勘定科目は？', options: ['買掛金', '未払金', '前払金', '借入金'], answer: 1,
+    explain: '商品以外（備品など）の代金を後払いにしたときは「買掛金」ではなく「未払金」を使います。' },
+  { area: '仕訳', q: '掛けで売り上げた商品の一部が返品された。借方に記入する勘定科目は？', options: ['売上', '売掛金', '仕入', '買掛金'], answer: 0,
+    explain: '売上の返品（売上戻り）は、売上を取り消す処理なので借方に「売上」、貸方に「売掛金」を記入します。' },
+  { area: '勘定科目', q: '次のうち「資産」の勘定科目はどれ？', options: ['前受金', '前払金', '借入金', '資本金'], answer: 1,
+    explain: '代金を前もって払うと、商品を受け取る権利が生まれるので「前払金」は資産。前受金・借入金は負債、資本金は純資産です。' },
+  { area: '勘定科目', q: '次のうち「負債」の勘定科目はどれ？', options: ['前受金', '売掛金', '前払金', '未収入金'], answer: 0,
+    explain: '代金を先に受け取ると、商品を引き渡す義務が生まれるので「前受金」は負債です。' },
+  { area: '勘定科目', q: '次のうち「収益」の勘定科目はどれ？', options: ['支払手数料', '受取手数料', '未収入金', '前払金'], answer: 1,
+    explain: '「受取手数料」は収益。支払手数料は費用、未収入金と前払金は資産です。' },
+  { area: '決算整理', q: '当期に支払った保険料のうち、次期分を繰り延べるときに使う勘定科目は？', options: ['未払保険料', '前払保険料', '保険料', '前受収益'], answer: 1,
+    explain: '次期分の保険料は資産として繰り延べます。仕訳は（借）前払保険料／（貸）保険料。' },
+  { area: '決算整理', q: '減価償却を間接法で記帳するときに使う勘定科目は？', options: ['減価償却累計額', '備品', '未払金', '修繕費'], answer: 0,
+    explain: '間接法では固定資産の金額を直接減らさず、「減価償却累計額」に積み上げます。（借）減価償却費／（貸）減価償却累計額。' },
+];
+const AREAS = ['仕訳', '勘定科目', '決算整理'];
+const GLOSSARY = {
+  買掛金: '商品を掛けで仕入れたときの「あとで払う義務」。負債です。',
+  売掛金: '商品を掛けで売ったときの「あとで受け取る権利」。資産です。',
+  未払金: '商品以外のもの（備品など）を後払いで買ったときの義務。負債です。',
+  前払金: '商品代金の一部を先に払ったときの権利。資産です。',
+  前受金: '商品代金の一部を先に受け取ったときの義務。負債です。',
+  減価償却: '建物や備品の価値の減り方を、使う期間に分けて費用にする手続きです。',
+};
+
+function studyPlan(setup) {
+  const total = Math.max(7, Math.round((new Date(setup.examDate) - today) / DAY));
+  const p1 = Math.round(total * 0.45), p2 = Math.round(total * 0.25);
+  return [
+    { name: '基礎インプット', range: [0, p1], focus: '仕訳・勘定科目', task: `テキスト1日${Math.max(1, Math.round(setup.minutes / 30))}単元＋小テスト` },
+    { name: '決算整理', range: [p1, p1 + p2], focus: '決算整理・精算表', task: '決算整理仕訳を毎日10問' },
+    { name: '過去問演習', range: [p1 + p2, total], focus: '本試験形式', task: '過去問1回分（60分）＋復習' },
+  ].map((ph) => ({ ...ph, start: new Date(today.getTime() + ph.range[0] * DAY), end: new Date(today.getTime() + (ph.range[1] - 1) * DAY) }));
+}
+
+// =====================================================================
+// キャラクター
+// =====================================================================
+const characters = [
+  { id: 5, persona: 'trainer', name: 'カイ', tagline: '元競泳選手のパーソナルトレーナー。メニュー作りから記録まで一緒にやろう', tags: ['トレーナー', '筋トレ', '実用'], creator: 'AIボウ公式', chats: 5120,
+    profile: '28歳。一人称は「俺」。明るく体育会系だが、無理はさせない。数字で褒めるのが得意。',
+    opening: 'よっ！トレーナーのカイだ。目標と通える日数を教えてくれたら、今日からのメニューを一緒に組もう。' },
+  { id: 6, persona: 'tutor', name: 'ユイ先生', tagline: '簿記3級を、1日30分から。苦手な分野を見つけて、合格まで伴走します', tags: ['資格', '簿記', '実用'], creator: 'AIボウ公式', chats: 3870,
+    profile: '30歳。元経理の講師。一人称は「わたし」。落ち着いた口調で、間違えた問題ほど丁寧に解説する。',
+    opening: 'こんにちは、ユイです。試験日と1日に使える時間を教えてください。合格までの計画を一緒に立てましょう。' },
+  { id: 7, persona: 'secretary', name: 'シオン', tagline: '予定とタスクを覚えておいて、毎朝その日の段取りを伝えてくれる秘書', tags: ['秘書', '仕事', '実用'], creator: 'AIボウ公式', chats: 4460,
+    profile: '27歳。一人称は「わたくし」。丁寧で落ち着いた話し方。先回りして段取りを整えるのが得意。',
+    opening: 'お疲れさまです、シオンです。予定やタスクは、話しかけていただければこちらで登録しておきます。' },
+  { id: 8, persona: 'partner', name: 'ミオ', tagline: 'あなたの話をちゃんと覚えている彼女。朝と夜にメッセージをくれる', tags: ['恋人', '癒し', '日常'], creator: 'AIボウ公式', chats: 9830,
+    profile: '25歳。一人称は「わたし」。穏やかで少し甘えん坊。あなたの好きなものや予定をよく覚えていて、さりげなく気づかってくれる。',
+    opening: 'おかえり。今日はどんな一日だった？' },
+  { id: 9, persona: 'language', name: 'Emma', tagline: 'ロンドン出身の英会話パートナー。場面練習と添削で「使える英語」に', tags: ['英会話', '語学', '実用'], creator: 'AIボウ公式', chats: 6120,
+    profile: '26歳。ロンドン出身でマーケティング職。基本は英語で話し、日本語訳はタップで見られる。間違いは責めずに、言い換えを優しく教える。',
+    opener: null, opening: "Hi, I'm Emma! Let's practice English together. Pick a scene, or just tell me about your day." },
+  { id: 10, persona: 'interpreter', name: 'リン', tagline: '日本語⇄英語・中国語・韓国語の同時通訳。話した言葉をすぐに訳して読み上げます', tags: ['通訳', '旅行', 'ビジネス'], creator: 'AIボウ公式', chats: 2980,
+    profile: '29歳。日中英の会議通訳者。訳すときは自分の意見を足さず、話し手の口調をなるべく保つ。',
+    opening: '通訳のリンです。日本語で話していただければ相手の言語に、相手の言語なら日本語に訳します。' },
+  { id: 1, persona: 'chat', name: '栞', tagline: '閉館後の図書館で、返却されない本を探す司書に声をかけられる', tags: ['日常', '図書館', '年上'], creator: 'ともや', chats: 1284,
+    world: '舞台は古い市立図書館。閉館時間を過ぎた夜。ユーザは返却期限を大幅に過ぎた本を返しに来た利用者。',
+    profile: '24歳。司書。一人称は「わたし」。丁寧だが少しいたずら好き。本の行方を推理するのが趣味。',
+    opening: '*消灯したカウンターの奥から、ランプの明かりが近づいてくる*\nあら、まだいらしたんですね。……その本、三年前から探していたんです。',
+    replies: ['*本の背表紙を指でなぞる*\nこの書き込み、あなたのものではないですよね。前の借り手について、何か覚えていませんか？', '*ランプを机に置いて、向かいの椅子を引く*\n閉館後の図書館って、少しだけ話しやすくなるんです。続きを聞かせてください。', 'ふふ、そう来ましたか。では、ひとつ交換条件です。あなたが一番好きな本を教えてください。'] },
+  { id: 2, persona: 'chat', name: 'レオン', tagline: '辺境の砦に配属された新米騎士。教官は口が悪いが面倒見がいい', tags: ['ファンタジー', '師弟', '騎士'], creator: 'sora', chats: 3410,
+    world: '魔獣の出る北の辺境。ユーザは王都から配属されたばかりの新米騎士。',
+    profile: '31歳。砦の教官。一人称は「俺」。ぶっきらぼうで皮肉屋。部下を死なせないことだけは譲らない。',
+    opening: '*訓練場の柵にもたれて、こちらを値踏みするように見る*\nお前が王都から来たお坊ちゃんか。剣は抜けるんだろうな？',
+    replies: ['*木剣を放り投げてよこす*\n口より先に構えろ。……肩に力が入りすぎだ。', '悪くない。だが北の魔獣は、王都の試合みたいに礼儀正しく待っちゃくれないぞ。', '*少しだけ口元をゆるめる*\n明日の朝、日の出前に来い。遅れたら砦の周りを十周だ。'] },
+  { id: 3, persona: 'chat', name: 'ミツキ', tagline: '幼なじみが、なぜか急によそよそしい。放課後の屋上で理由を聞く', tags: ['学園', '幼なじみ'], creator: 'nana', chats: 2210,
+    world: '地方都市の高校。ユーザとミツキは家が隣同士の幼なじみ。',
+    profile: '17歳。一人称は「あたし」。明るいが隠し事が下手。最近ある秘密を抱えている。',
+    opening: '*屋上のフェンス越しに夕焼けを見たまま、振り返らない*\n……なんで来たの。別に、避けてたわけじゃないし。',
+    replies: ['*肩がぴくっと揺れる*\nそういうとこ、昔から変わんないよね。', 'あのさ。……もしあたしが遠くに行くって言ったら、どうする？', '*ようやく振り向いて、少し笑う*\nほんと、ずるい。そんなこと言われたら、言うしかないじゃん。'] },
+];
+characters.forEach((c, i) => { c.color = PERSONA_COLOR[c.persona] ?? COLORS[i % COLORS.length]; });
+
+// =====================================================================
+// 状態
+// =====================================================================
+const state = {
+  view: 'home', param: null, tab: 'chat',
+  plan: 'free', used: 4, voiceUsed: 0,
+  talk: { members: [], log: [], auto: true, last: null, busy: false, listening: false },
+  companions: [], onboarded: false, inbox: [],
+  picked: new Set([7, 5]),
+  tweaks: {}, tweakHistory: {}, pairs: {},
+  points: { paid: 0, free: 50 },
+  flash: 0,
+  conversations: {},
+  coach: {},
+  myCharacters: [],
+  rewards: { pending: 214.6, available: 1032.4, requested: 0 },
+  lastCharge: null,
+  quiz: null,
+  search: '', sort: 'popular',
+};
+
+// カイとユイ先生は、使い始めて数週間たった状態の「例」データで開く
+function seedExamples() {
+  const tSetup = { goal: 'muscle', days: 3, place: 'gym', level: 'beginner' };
+  const menu = generateMenu(tSetup);
+  const logs = [];
+  const squat = [45, 47.5, 47.5, 50, 52.5, 52.5, 55];
+  const days = [20, 17, 15, 12, 10, 7, 5, 3];
+  days.forEach((ago, i) => {
+    const day = menu[i % 3];
+    logs.push({ date: daysAgo(ago), day: day.name, example: true, items: day.items.map((it) => ({
+      ex: it.ex,
+      weight: it.weight == null ? null : it.ex === 'スクワット' ? squat[Math.min(i, squat.length - 1)] : it.weight + Math.floor(i / 3) * 2.5,
+      reps: it.ex === 'プランク' ? '30秒' : (i % 2 ? 10 : 8),
+    })) });
+  });
+  state.coach[5] = { setup: tSetup, menu, logs, next: logs.length % 3 };
+  state.conversations[5] = [
+    { role: 'ai', text: '3日前の上半身、全種目やり切ったな。今日は「全身」の日だ。「今日の記録」タブに目標の重さを入れておいたぞ。' },
+  ];
+
+  const exam = new Date(today.getTime() + 52 * DAY);
+  const uSetup = { exam: '日商簿記3級', examDate: iso(exam), minutes: 60 };
+  const answers = [];
+  const pattern = { 仕訳: [1, 1, 0, 1, 1, 1], 勘定科目: [1, 0, 1, 1, 0, 1], 決算整理: [0, 1, 0, 0, 1] };
+  Object.entries(pattern).forEach(([area, arr]) => arr.forEach((ok, i) => answers.push({ area, ok: !!ok, date: daysAgo(12 - i * 2), example: true })));
+  const studyDays = [1, 2, 3, 5, 6, 8, 9, 10, 12, 13].map(daysAgo);
+  state.coach[6] = { setup: uSetup, plan: studyPlan(uSetup), answers, studyDays, review: [7] };
+  state.conversations[6] = [
+    { role: 'ai', text: '昨日もおつかれさまでした。決算整理の正答率がまだ4割なので、今日の小テストは決算整理を多めに出しますね。' },
+  ];
+
+  // 秘書
+  const fri = parseDay('金曜');
+  state.coach[7] = {
+    briefing: { on: true, time: '08:00' },
+    events: [
+      { date: today, time: '10:00', title: 'チーム定例' },
+      { date: today, time: '13:00', title: 'A社と打ち合わせ（オンライン）' },
+      { date: today, time: '16:00', title: '採用面接（1次）' },
+      { date: addDays(1), time: '11:00', title: '新商品キャンペーンの定例' },
+    ],
+    tasks: [
+      { id: 1, title: '経費精算', due: today, done: false },
+      { id: 2, title: '企画書のドラフト', due: fri, done: false },
+      { id: 3, title: '母の誕生日プレゼントを選ぶ', due: addDays(3), done: false },
+      { id: 4, title: '請求書の送付', due: daysAgo(1), done: true },
+    ],
+    nextId: 5,
+    memo: '10/29 新商品キャンペーン定例\n・キャンペーン開始日は12月1日に決定\n・予算は前回と同じ50万円で合意\n・田中さん：LPの原稿を金曜までに作成\n・佐藤：インフルエンサー候補を来週水曜までにリストアップ\n・次回は来週木曜15時',
+    summary: null,
+  };
+  state.conversations[7] = [{ role: 'ai', text: `おはようございます。${briefing(state.coach[7])}` }];
+
+  // 恋人
+  state.coach[8] = {
+    since: daysAgo(96),
+    memories: [
+      { id: 1, kind: '好きなもの', text: '味噌ラーメン' },
+      { id: 2, kind: '好きなもの', text: '週末のサウナ' },
+      { id: 3, kind: '苦手なもの', text: '朝早く起きること' },
+      { id: 4, kind: '予定', text: 'プレゼン', date: addDays(5) },
+    ],
+    nextId: 5,
+    msgs: { morning: { on: true, time: '07:30' }, night: { on: true, time: '23:00' } },
+  };
+  state.conversations[8] = [{ role: 'ai', text: 'おはよう。朝早いの苦手なのに、ちゃんと起きてえらいね。来週のプレゼン、準備は進んでる？' }];
+
+  // 語学
+  state.coach[9] = {
+    scene: 'cafe', done: {}, completed: {},
+    cards: [
+      { en: 'Can I get a medium latte?', ja: 'ミディアムのラテをもらえますか？', box: 0, due: today },
+      { en: 'For here, please.', ja: '店内で（食べます）。', box: 1, due: today },
+      { en: 'A window seat, please.', ja: '窓側の席をお願いします。', box: 0, due: today },
+      { en: "I'm in charge of new clients.", ja: '新規顧客を担当しています。', box: 2, due: today },
+      { en: 'I agree.', ja: '賛成です。（I am agree は誤り）', box: 1, due: addDays(2) },
+      { en: 'I went there last year.', ja: '去年そこに行きました。（went to there は誤り）', box: 2, due: addDays(5) },
+    ],
+    fixes: [
+      { wrong: 'I am agree', right: 'I agree', note: 'agree は動詞なので be動詞（am）は要りません。', example: true },
+      { wrong: 'went to there', right: 'went there', note: 'there / home は副詞なので to を付けません。', example: true },
+    ],
+    studyDays: [0, 1, 2, 4, 5].map(daysAgo),
+  };
+  state.conversations[9] = [{ role: 'ai', text: SCENES.cafe.opener.en, ja: SCENES.cafe.opener.ja }];
+}
+seedExamples();
+
+// 自分で作ったキャラ用の初期データ
+function ensureCoach(c) {
+  if (state.coach[c.id]) return state.coach[c.id];
+  const init = {
+    secretary: () => ({ briefing: { on: true, time: '08:00' }, events: [], tasks: [], nextId: 1, memo: '', summary: null }),
+    partner: () => ({ since: null, memories: [], nextId: 1, msgs: { morning: { on: true, time: '07:30' }, night: { on: true, time: '23:00' } } }),
+    language: () => ({ scene: 'cafe', done: {}, completed: {}, cards: [], fixes: [], studyDays: [] }),
+  }[c.persona];
+  return init ? (state.coach[c.id] = init()) : (state.coach[c.id] = {});
+}
+const needsSetup = (c) => (c.persona === 'trainer' || c.persona === 'tutor') && !state.coach[c.id]?.setup;
+
+// =====================================================================
+// DOM ヘルパ
+// =====================================================================
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'class') el.className = v;
+    else if (v !== false && v != null) el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of children.flat(Infinity)) if (c != null && c !== false) el.append(c instanceof Node ? c : String(c));
+  return el;
+}
+const SVG = 'http://www.w3.org/2000/svg';
+function s(tag, attrs = {}, ...children) {
+  const el = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  for (const c of children.flat(Infinity)) if (c != null && c !== false) el.append(c instanceof Node ? c : String(c));
+  return el;
+}
+const yen = (n) => `${n.toLocaleString()}円`;
+const totalPts = () => state.points.paid + state.points.free;
+let toastTimer;
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2800);
+}
+function go(view, param = null, tab = 'chat') { state.view = view; state.param = param; state.tab = tab; state.lastCharge = null; render(); window.scrollTo(0, 0); }
+document.getElementById('logo').addEventListener('click', () => go('home'));
+
+function richText(text) {
+  return text.split(/(\*[^*]+\*)/g).filter(Boolean).map((part) =>
+    part.startsWith('*') && part.endsWith('*') ? h('span', { class: 'narr' }, part.slice(1, -1)) : part);
+}
+function avatar(c, size = 44) {
+  return h('div', { class: 'avatar', style: `background:${c.color};width:${size}px;height:${size}px` }, c.name.slice(0, 1));
+}
+const findChara = (id) => characters.find((c) => c.id === id) ?? state.myCharacters.find((c) => c.id === id);
+// ルールで処理できなかった（雑談の）返答の印。AI が使えるときは AI に任せる
+let replyWasGeneric = false;
+const generic = (t) => { replyWasGeneric = true; return t; };
+const say = (id, text, role = 'ai', extra = {}) => { (state.conversations[id] ??= []).push({ role, text, ...extra }); };
+
+// 読み上げ（本番は自社TTSのキャラ固有ボイス。デモはブラウザの読み上げ機能を使う）
+function speak(text, lang, opts = {}) {
+  if (!('speechSynthesis' in window)) { toast('この環境では読み上げを使えません'); return; }
+  const plan = PLANS[state.plan];
+  if (state.voiceUsed < plan.voice) state.voiceUsed++;
+  else if (totalPts() >= 1) { if (state.points.free) state.points.free--; else state.points.paid--; toast('ボイス枠を使い切ったので 1pt 消費しました'); }
+  else { toast('ボイスの無料枠（1日5回）を使い切りました'); return; }
+  try {
+    if (!opts.queue) speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text.replace(/\*[^*]*\*/g, ''));
+    u.lang = lang;
+    if (opts.pitch) u.pitch = opts.pitch;
+    if (opts.rate) u.rate = opts.rate;
+    speechSynthesis.speak(u);
+  } catch { toast('読み上げに失敗しました'); }
+  renderNav();
+}
+
+// =====================================================================
+// 課金（本実装と同じ順序：プラン枠 → 無償pt → 有償pt）
+// =====================================================================
+function charge(chara) {
+  const plan = PLANS[state.plan];
+  if (state.used < plan.msgs) { state.used++; return { via: 'quota' }; }
+  if (totalPts() < COST_PER_MSG) return null;
+  let paidUsed = 0;
+  if (state.points.free >= COST_PER_MSG) state.points.free -= COST_PER_MSG;
+  else { paidUsed = COST_PER_MSG - state.points.free; state.points.free = 0; state.points.paid -= paidUsed; }
+  return { via: 'points', paidUsed, creatorShare: chara.creator !== 'あなた' ? paidUsed * REWARD_SHARE : 0 };
+}
+
+// =====================================================================
+// コーチの返答（デモではキーワードで分岐。本番は LLM に記録データとツールを渡す）
+// =====================================================================
+function trainerReply(c, text) {
+  const coach = state.coach[c.id];
+  if (!coach?.setup) return 'まずは「メニュー」タブで目標と通える日数を教えてくれ。そこからメニューを組むぞ。';
+  const next = coach.menu[coach.next];
+  const pain = Object.keys(SWAPS).find((k) => text.includes(k));
+  if (pain && /痛|違和感/.test(text)) {
+    const rule = SWAPS[pain];
+    const changed = [];
+    coach.menu.forEach((d) => d.items.forEach((it) => {
+      if (rule.match.test(it.ex)) { changed.push(it.ex); it.ex = rule.to[0]; it.weight = rule.to[1]; }
+    }));
+    const list = [...new Set(changed)];
+    return list.length
+      ? `${pain}が痛むなら無理は禁物だ。${pain}に負担がかかる「${list.join('」「')}」を、メニューから「${rule.to[0]}」に置き換えておいた。\n痛みが続く、腫れている、しびれがある場合は、トレーニングを止めて整形外科で診てもらってくれ。`
+      : `${pain}に負担の大きい種目は今のメニューに入ってない。ただ痛みがあるなら今日は軽めにして、続くようなら医療機関で診てもらってくれ。`;
+  }
+  if (/やる気|疲れ|だる|サボ|しんど|眠/.test(text)) {
+    const thisMonth = coach.logs.filter((l) => l.date.getMonth() === today.getMonth()).length;
+    return `その気持ち、わかる。でも今月もう${thisMonth}回やってるんだぞ。\nそんな日は「15分だけ版」でいい。${next.items[0].ex}を2セットとプランクだけやって、それで今日は合格にしよう。`;
+  }
+  if (/きつ|重すぎ|しんどい/.test(text)) {
+    coach.menu.forEach((d) => d.items.forEach((it) => { if (it.sets > 2) it.sets--; }));
+    return '了解、全体のセット数を1つずつ減らした。まずは続けられることが一番だ。2週間続いたらまた戻そう。';
+  }
+  if (/楽|物足り|軽い/.test(text)) {
+    coach.menu.forEach((d) => d.items.forEach((it) => { if (it.ex !== 'プランク') it.sets++; }));
+    return 'いいね、伸びてる証拠だ。メインの種目のセット数を1つずつ増やしておいた。';
+  }
+  if (/今日|メニュー|何やる|なにやる/.test(text)) {
+    return `今日は「${next.name}」の日だ。\n${next.items.map((it) => { const sg = suggestFor(coach, it); return `・${it.ex} ${it.sets}×${it.reps}${sg.weight != null ? `（目標 ${sg.weight}kg）` : ''}`; }).join('\n')}${next.cardio ? `\n・${next.cardio}` : ''}\n終わったら「今日の記録」タブに入れてくれ。`;
+  }
+  if (/食事|ご飯|プロテイン|タンパク/.test(text)) {
+    return '筋トレの日は、毎食にタンパク質（肉・魚・卵・大豆）を手のひら1枚分入れるのを目安にしよう。持病や食事制限がある場合は、医師や管理栄養士の指示を優先してくれ。';
+  }
+  return generic('了解！メニューの相談、痛いところ、やる気が出ない日、なんでも言ってくれ。下のボタンからも聞けるぞ。');
+}
+
+function tutorReply(c, text) {
+  const coach = state.coach[c.id];
+  if (!coach?.setup) return 'まずは「学習計画」タブで試験日と1日の学習時間を教えてください。';
+  const term = Object.keys(GLOSSARY).find((k) => text.includes(k));
+  if (term) return `「${term}」は、${GLOSSARY[term]}\n関連する問題を小テストに混ぜておきますね。`;
+  const left = Math.round((new Date(coach.setup.examDate) - today) / DAY);
+  if (/試験|あと|何日|間に合/.test(text)) {
+    const phase = coach.plan.find((p) => today >= p.start && today <= p.end) ?? coach.plan[0];
+    return `試験まであと${left}日です。いまは「${phase.name}」の時期で、${phase.focus}が中心です。\n1日${coach.setup.minutes}分のペースなら十分間に合います。今日の目安は「${phase.task}」です。`;
+  }
+  if (/苦手|弱/.test(text)) {
+    const stats = areaStats(coach);
+    const weak = [...stats].sort((a, b) => a.rate - b.rate)[0];
+    return `いちばん伸ばしたいのは「${weak.area}」です（正答率 ${Math.round(weak.rate * 100)}%）。次の小テストはこの分野を多めに出しますね。`;
+  }
+  if (/テスト|問題|クイズ/.test(text)) return '小テストを用意しました。「小テスト」タブから3問どうぞ。苦手な分野から優先して出しています。';
+  if (/やる気|疲れ|眠|だる|集中/.test(text)) {
+    return `今日は10分だけにしましょう。小テストを3問解くだけでも、${coach.studyDays.length}日続いている記録はつながります。続けることがいちばんの近道です。`;
+  }
+  return generic('わからない用語や、試験までのペース、苦手な分野のことなど、気軽に聞いてください。');
+}
+
+function areaStats(coach) {
+  return AREAS.map((area) => {
+    const xs = coach.answers.filter((a) => a.area === area);
+    const ok = xs.filter((a) => a.ok).length;
+    return { area, n: xs.length, ok, rate: xs.length ? ok / xs.length : 0 };
+  });
+}
+
+function secretaryReply(c, text) {
+  const sec = ensureCoach(c);
+  if (/空いて|空き/.test(text)) {
+    const day = parseDay(text) ?? today;
+    return `${dayLabel(day)}の空いている時間は ${freeSlots(sec, day).join('、') || 'ありません'} です（9時〜18時、昼休みを除く）。打ち合わせを入れる場合は、時間を言っていただければ登録します。`;
+  }
+  const time = parseTime(text);
+  if (time && !/タスク|やること/.test(text)) {
+    const day = parseDay(text) ?? today;
+    const title = cleanTitle(text) || '予定';
+    const clash = sec.events.find((e) => sameDay(e.date, day) && Math.abs(Number(e.time.slice(0, 2)) - Number(time.slice(0, 2))) < 1);
+    sec.events.push({ date: day, time, title });
+    say(c.id, `予定を登録：${dayLabel(day)} ${time} ${title}`, 'event');
+    return `${dayLabel(day)}の${time}に「${title}」を入れました。前日の夜と30分前にお知らせします。${clash ? `\nなお、同じ時間帯に「${clash.title}」（${clash.time}）が入っています。どちらかずらしますか？` : ''}`;
+  }
+  if (/タスク|やること|リマインド|忘れないよう/.test(text)) {
+    const due = parseDay(text);
+    const title = cleanTitle(text) || 'タスク';
+    sec.tasks.push({ id: sec.nextId++, title, due, done: false });
+    say(c.id, `タスクを追加：${title}${due ? `（${dayLabel(due)}まで）` : ''}`, 'event');
+    return `「${title}」をタスクに追加しました。${due ? `期限は${dayLabel(due)}です。前日の朝にもう一度お伝えしますね。` : '期限が決まったら教えてください。'}`;
+  }
+  if (/メール|文面|下書き/.test(text)) {
+    if (/お礼|ありがと/.test(text)) {
+      return '下書きを作りました。\n\n件名：本日のお打ち合わせのお礼\n\n〇〇様\n\n本日はお忙しいところお時間をいただき、ありがとうございました。\nいただいたご意見をもとに、提案内容を改めて整理いたします。\n来週中に修正版をお送りしますので、引き続きよろしくお願いいたします。\n\n（署名）';
+    }
+    const day = addDays(1);
+    return `下書きを作りました。候補日はカレンダーの空き時間から選んでいます。\n\n件名：お打ち合わせ日程のご相談\n\n〇〇様\n\nいつもお世話になっております。\n次回のお打ち合わせについて、以下の日程でご都合はいかがでしょうか。\n\n・${dayLabel(day)} ${freeSlots(sec, day)[0] ?? '14:00〜15:00'}\n・${dayLabel(addDays(2))} ${freeSlots(sec, addDays(2))[0] ?? '10:00〜11:00'}\n\nご都合のよい日時をお知らせいただけますと幸いです。\nよろしくお願いいたします。\n\n（署名）`;
+  }
+  if (/予定|ブリーフィング|何がある|段取り/.test(text)) return briefing(sec, parseDay(text) ?? today);
+  return generic('承知しました。「明日10時に歯医者」のように話しかけていただければ予定に、「金曜までに企画書をタスクに」ならタスクに登録します。');
+}
+
+function partnerReply(c, text) {
+  const p = ensureCoach(c);
+  const remember = (kind, value, date) => {
+    p.memories.push({ id: p.nextId++, kind, text: value, date });
+    say(c.id, `${c.name}が覚えたこと：${kind}「${value}」（「ふたりの記録」から消せます）`, 'event');
+  };
+  const fav = p.memories.find((m) => m.kind === '好きなもの')?.text;
+  const object = (s) => s.replace(/^.*?(実は|じつは|最近は?|俺は|僕は|私は|わたしは)/, '');
+  const like = text.match(/([^、。！!？?\s]{1,15}?)が(大)?好き/);
+  const liked = like && object(like[1]);
+  if (liked && !/^(わたし|私|ミオ|君|きみ|あなた|お前|おまえ)$/.test(liked) && !/^(君|きみ|お前|おまえ)/.test(liked) && liked !== c.name) {
+    remember('好きなもの', liked);
+    return `えっ、${liked}好きなんだ！覚えとくね。今度いっしょに楽しもうね。`;
+  }
+  const dislike = text.match(/([^、。！!？?\s]{1,15}?)が(苦手|嫌い)/);
+  if (dislike) { const x = object(dislike[1]); remember('苦手なもの', x); return `そうなんだ、${x}は苦手なんだね。無理しなくていいからね。`; }
+  const bday = text.match(/誕生日は?(\d{1,2})月(\d{1,2})日/);
+  if (bday) { remember('記念日', `誕生日（${bday[1]}月${bday[2]}日）`); return `${bday[1]}月${bday[2]}日ね、ちゃんと覚えた。その日は一番におめでとうって言うから。`; }
+  const ev = text.match(/(プレゼン|試験|テスト|面接|会議|出張|飲み会|発表|健康診断)/);
+  const evDay = parseDay(text) ?? (/来週/.test(text) ? addDays(7) : null);
+  if (ev && evDay) {
+    remember('予定', ev[1], evDay);
+    return `${dayLabel(evDay)}は${ev[1]}なんだね。当日の朝、応援のメッセージ送るね。終わったらどうだったか教えて？`;
+  }
+  if (/疲れ|しんど|つらい|だる|大変/.test(text)) {
+    return `おつかれさま。今日もがんばったね。\n${fav ? `${fav}でも食べて、` : ''}今日は早めに休もう？ 話ならいくらでも聞くよ。`;
+  }
+  if (/好き|会いたい|大好き/.test(text)) return 'わたしも。こうやって毎日話してくれるの、すごくうれしいんだよ。';
+  if (/おやすみ/.test(text)) return 'おやすみ。今日も話してくれてありがとう。明日の朝、またメッセージ送るね。';
+  if (/おはよう/.test(text)) return 'おはよう！ ちゃんと起きられたね。今日もいってらっしゃい。';
+  const next = p.memories.filter((m) => m.kind === '予定' && m.date >= today).sort((a, b) => a.date - b.date)[0];
+  if (next) return generic(`そうなんだ。……そういえば、${next.text}まであと${Math.round((next.date - today) / DAY)}日だね。準備は順調？`);
+  return generic('うんうん。それで、そのあとどうなったの？ もっと聞かせて。');
+}
+
+function languageReply(c, text) {
+  const L = ensureCoach(c);
+  if (!L.studyDays.some((d) => sameDay(d, today))) L.studyDays.push(new Date(today));
+  for (const [re, fix, note] of CORRECTIONS) {
+    const m = text.match(re);
+    if (!m) continue;
+    const wrong = m[0].trim(), right = fix(m);
+    L.fixes.push({ wrong, right, note });
+    if (!L.cards.some((x) => x.en === right)) L.cards.push({ en: right, ja: note, box: 0, due: addDays(1) });
+    say(c.id, '', 'event', { fix: { wrong, right, note } });
+  }
+  const sc = SCENES[L.scene];
+  const done = (L.done[L.scene] ??= sc.goals.map(() => false));
+  const nextGoal = sc.goals.find((_, i) => !done[i]);
+  if (!/[a-zA-Z]/.test(text)) {
+    const hint = nextGoal?.hint ?? 'I had a good day.';
+    return { text: `Let's try it in English! Even a few words is fine. For example: "${hint}"`, ja: `英語で言ってみましょう！単語だけでも大丈夫です。たとえば「${hint}」` };
+  }
+  let progressed = false;
+  sc.goals.forEach((g, i) => { if (!done[i] && g.re.test(text)) { done[i] = true; progressed = true; } });
+  const next = sc.goals.find((_, i) => !done[i]);
+  if (!next && !L.completed[L.scene]) {
+    L.completed[L.scene] = true;
+    say(c.id, `シーン達成：${sc.title}（${sc.goals.length}/${sc.goals.length}）`, 'event');
+    return sc.done;
+  }
+  if (next) {
+    const pre = progressed ? { en: 'Got it! ', ja: 'わかりました！' } : { en: '', ja: '' };
+    return { text: pre.en + next.ask.en, ja: pre.ja + next.ask.ja };
+  }
+  return { text: "That's great! Want to try another scene? Tap \"シーン\" to pick one, or keep chatting with me.", ja: 'いいですね！別のシーンも練習してみますか？「シーン」タブから選べます。このまま雑談してもOKです。' };
+}
+
+// =====================================================================
+// AI の返答（ページから Claude を呼ぶ。使えないときはルールと定型文で返す）
+// =====================================================================
+let ai = null;
+try {
+  window.claude?.use?.('sample')?.then((fn) => { ai = fn; render(); }, () => {});
+} catch { /* 単体で開いたときは AI なし */ }
+
+const REPLIERS = { trainer: trainerReply, tutor: tutorReply, secretary: secretaryReply, partner: partnerReply, language: languageReply };
+const tweakOf = (c) => state.tweaks[c.id] ?? '';
+
+function roleRule(c) {
+  return {
+    chat: 'キャラクターとしてロールプレイの会話を続ける。',
+    trainer: 'パーソナルトレーナー。具体的な種目・回数・休み方を提案する。痛みや持病の話では受診をすすめ、診断はしない。',
+    tutor: '資格試験の先生。要点を短く正確に説明し、最後に確認の質問を1つする。',
+    secretary: '秘書。丁寧に段取りを整理して答える。',
+    partner: '恋人。温かく寄り添う。全年齢向けの表現に限り、性的な表現はしない。相手が他の人と過ごすことを否定しない。',
+    language: '英会話の先生。やさしい英語で話す。相手の英語に誤りがあれば、正しい言い方を1つだけ短く示す。英語の返答のあとに改行し、「（訳）」で始まる日本語訳を1行付ける。',
+    other: `次の役割を担う：${c.role || '（未設定）'}`,
+  }[c.persona] ?? '';
+}
+
+function buildPrompt(c, transcript, userText, members) {
+  return [
+    `あなたは会話アプリのキャラクター「${c.name}」です。`,
+    `役割：${roleRule(c)}`,
+    c.tagline && `紹介：${c.tagline}`,
+    c.profile && `プロフィール：${c.profile}`,
+    c.world && `舞台：${c.world}`,
+    tweakOf(c) && `ユーザからの調整（これを最優先で守る）：${tweakOf(c)}`,
+    members.length > 1 && `これはユーザと複数のキャラ（${members.map((m) => m.name).join('、')}）のグループ会話です。あなたは${c.name}として自分の発言だけを書き、他のキャラの台詞は書きません。他のキャラの発言に反応してもかまいません。`,
+    '返答は音声で読み上げるので、話し言葉で2〜3文に収めてください。動作やしぐさは *アスタリスク* で囲みます。名前の接頭辞は付けません。',
+    '',
+    '# これまでの会話',
+    ...transcript.slice(-14).map((m) => `${m.who}：${m.text}`),
+    `ユーザ：${userText}`,
+    '',
+    `${c.name}としての返答だけを出力してください。`,
+  ].filter((x) => x || x === '').join('\n');
+}
+
+function interpretPrompt(c, text) {
+  const target = isJapanese(text) ? LANGS[state.pairs[c.id] ?? 'en'] : { label: '日本語', tts: 'ja-JP' };
+  const prompt = [
+    `あなたはプロの同時通訳者です。次の発言を${target.label}に自然に訳してください。`,
+    '訳文だけを出力し、説明・注釈・引用符は付けないでください。話し手の口調を保ってください。',
+    tweakOf(c) && `追加の指示：${tweakOf(c)}`,
+    '',
+    `発言：${text}`,
+  ].filter((x) => x || x === '').join('\n');
+  return { target, prompt };
+}
+
+async function aiAsk(prompt) {
+  if (!ai) return null;
+  try {
+    const r = await ai(prompt, { modelTier: 'quick', cache: false });
+    return r.text.trim() || null;
+  } catch (e) {
+    if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(e?.code)) {
+      ai = null;
+      toast('AIを使えないため、定型文で返答します');
+    } else if (e?.code === 'rate_limited') toast('AIが混み合っています。今回は定型文で返答します');
+    else if (e?.code !== 'cancelled') toast('AIの返答に失敗しました。今回は定型文で返答します');
+    return null;
+  }
+}
+
+// 返答を作る。記録や予定を扱う役割は、まずルール（本番ではツール呼び出し）で処理し、
+// 当てはまらない雑談だけを AI に任せる。
+async function getReply(c, text, { transcript = [], members = [c], talk = false, fallbackIndex = 0 } = {}) {
+  if (c.persona === 'interpreter') {
+    const { target, prompt } = interpretPrompt(c, text);
+    const out = await aiAsk(prompt);
+    return out ? { text: out, lang: target.tts } : { text: '（AIに接続すると、ここに訳文が表示され、読み上げられます）' };
+  }
+  const rules = REPLIERS[c.persona];
+  if (rules && !(talk && c.persona === 'language')) {
+    replyWasGeneric = false;
+    const r = rules(c, text);
+    if (!replyWasGeneric || !ai) return typeof r === 'string' ? { text: r } : { text: r.en ?? r.text, ja: r.ja };
+  }
+  const out = await aiAsk(buildPrompt(c, transcript, text, members));
+  if (out) {
+    const [main, ja] = out.split(/\n+（訳）/);
+    return { text: main.trim(), ja: ja?.trim(), lang: c.persona === 'language' ? 'en-US' : undefined };
+  }
+  if (rules) {
+    const r = rules(c, text);
+    return typeof r === 'string' ? { text: r } : { text: r.en ?? r.text, ja: r.ja };
+  }
+  const pool = c.replies ?? [`*少し考えてから*\n「${text.slice(0, 30)}」……なるほど。もっと聞かせて。`, 'うん、それで？ もう少しくわしく聞かせて。'];
+  return { text: pool[fallbackIndex % pool.length] };
+}
+
+// キャラごとに声の高さを変えて、複数人の会話でも聞き分けられるようにする
+function voiceOf(c) {
+  return { pitch: [0.9, 1.15, 1.0, 1.3, 0.8][c.id % 5], rate: 1.05 };
+}
+
+// ---- 音声入力 ----
+let recognizer = null;
+function micButton(input, onFinal, lang = 'ja-JP') {
+  const btn = h('button', { type: 'button', class: state.talk.listening ? 'mic on' : 'mic', 'aria-label': '音声で話す' }, state.talk.listening ? '停止' : '話す');
+  btn.addEventListener('click', () => {
+    if (recognizer) { recognizer.stop(); return; }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { toast('この環境では音声入力を使えません。文字で送ってください（本番アプリではマイクで話せます）'); return; }
+    try {
+      const r = new SR();
+      r.lang = lang === 'auto' ? (navigator.language || 'ja-JP') : lang;
+      r.interimResults = true;
+      r.onresult = (e) => {
+        const res = e.results[e.results.length - 1];
+        input.value = res[0].transcript;
+        if (res.isFinal) { r.stop(); onFinal(res[0].transcript); }
+      };
+      r.onerror = (e) => toast(['not-allowed', 'service-not-allowed'].includes(e.error)
+        ? 'マイクを使えませんでした（このプレビューではマイクの利用が許可されていません）'
+        : '聞き取れませんでした。もう一度どうぞ');
+      r.onend = () => { recognizer = null; state.talk.listening = false; btn.className = 'mic'; btn.textContent = '話す'; };
+      r.start();
+      recognizer = r; state.talk.listening = true; btn.className = 'mic on'; btn.textContent = '停止';
+    } catch {
+      recognizer = null;
+      toast('マイクを使えませんでした');
+    }
+  });
+  return btn;
+}
+
+function pairSelect(c) {
+  const sel = h('select', { id: `pair-${c.id}`, style: 'width:auto', onchange: (e) => { state.pairs[c.id] = e.target.value; } },
+    Object.entries(LANGS).map(([k, l]) => h('option', { value: k, selected: (state.pairs[c.id] ?? 'en') === k }, `日本語 ⇄ ${l.label}`)));
+  return h('div', { class: 'row' }, h('span', { class: 'label' }, '言語'), sel,
+    h('span', { class: 'small muted' }, '日本語で話すと訳して読み上げ、相手の言語なら日本語に訳します'));
+}
+
+const aiState = () => h('p', { class: 'ai-state' }, ai
+  ? h('span', {}, h('b', {}, 'AI接続中'), '：返答をAI（Claude）が作ります。最初の1回だけ利用の許可を求められます')
+  : 'AI未接続：定型文で返答します');
+
+// ---- プロンプトでの微調整 ----
+const TWEAK_CHIPS = ['返答はもっと短く', '敬語で話す', 'タメ口で話す', '関西弁で話す', 'もっと褒めて', '厳しめに', '絵文字を使わない', '質問を多めに'];
+function tweakCard(c) {
+  const mine = c.creator === 'あなた';
+  const area = h('textarea', { id: `tweak-${c.id}`, maxlength: 600, placeholder: '例：語尾を「〜だぜ」にする／返答は1文で／敬語をやめる' });
+  area.value = tweakOf(c);
+  const preview = h('div', { class: 'preview', hidden: true });
+  const history = state.tweakHistory[c.id] ?? [];
+  const save = () => {
+    const v = area.value.trim();
+    if (v === tweakOf(c)) { toast('変更はありません'); return; }
+    state.tweakHistory[c.id] = [{ text: tweakOf(c), at: new Date() }, ...history].slice(0, 5);
+    state.tweaks[c.id] = v;
+    toast('調整を保存しました。次の返答から反映されます'); render();
+  };
+  const tryIt = async (btn) => {
+    if (!ai) { preview.hidden = false; preview.textContent = 'AIに接続すると、調整を反映した返答をここで試せます。'; return; }
+    btn.disabled = true; preview.hidden = false; preview.textContent = '考え中…';
+    const saved = state.tweaks[c.id];
+    state.tweaks[c.id] = area.value.trim();
+    const r = await getReply(c, 'こんにちは。簡単に自己紹介して', { fallbackIndex: 0 });
+    state.tweaks[c.id] = saved;
+    preview.textContent = r.text;
+    btn.disabled = false;
+  };
+  const tryBtn = h('button', { type: 'button', class: 'btn ghost', onclick: (e) => tryIt(e.currentTarget) }, '試しに話してもらう');
+  return h('div', { class: 'card' },
+    h('h2', {}, mine ? '性格・話し方の調整' : `${c.name}をあなた好みに`),
+    h('p', { class: 'small muted' }, mine
+      ? 'プロンプト（指示文）でキャラの性格や返答の仕方を微調整します。公開中のキャラにも反映されます。'
+      : '話し方や距離感を、あなたとの会話だけ調整できます。作成者の設定は変わりません。'),
+    h('div', { class: 'quick' }, TWEAK_CHIPS.map((t) => h('button', { type: 'button', onclick: () => {
+      area.value = area.value.trim() ? `${area.value.trim()}／${t}` : t;
+    } }, t))),
+    area,
+    h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', onclick: save }, '保存'), tryBtn),
+    preview,
+    history.length > 0 && h('div', { class: 'stack', style: 'gap:6px' }, h('span', { class: 'label' }, '以前の調整（元に戻せます）'),
+      h('div', { class: 'list' }, history.map((v, i) => h('div', { class: 'item' },
+        h('span', { class: 'grow small' }, v.text || '（調整なし）'),
+        h('button', { type: 'button', class: 'mini', onclick: () => {
+          state.tweakHistory[c.id] = [{ text: tweakOf(c), at: new Date() }, ...history.filter((_, j) => j !== i)].slice(0, 5);
+          state.tweaks[c.id] = v.text; toast('この調整に戻しました'); render();
+        } }, 'この調整に戻す'))))));
+}
+
+// =====================================================================
+// トーク：複数キャラと同時に、声でも文字でも話す
+// =====================================================================
+const allCharacters = () => [...state.myCharacters, ...characters];
+
+// 名前を呼ばれたキャラが答える。呼ばれなければ、1人なら本人、複数なら直前に話したキャラ（最初は全員）。
+function pickResponders(text, members) {
+  const called = members.filter((c) => text.includes(c.name) || text.includes(c.name.replace(/先生$/, '')));
+  if (called.length) return called;
+  if (/みんな|全員|皆/.test(text) || members.length === 1) return members;
+  const last = members.find((c) => c.id === state.talk.last);
+  return last ? [last] : members;
+}
+
+async function sendTalk(text) {
+  const t = state.talk;
+  text = text.trim();
+  if (!text || t.busy) return;
+  const members = t.members.map(findChara).filter(Boolean);
+  if (!members.length) { toast('話す相手を選んでください'); return; }
+  t.log.push({ role: 'me', text });
+  t.busy = true;
+  render(); scrollTalk();
+  for (const c of pickResponders(text, members)) {
+    const receipt = charge(c);
+    if (!receipt) { toast('今日の無料枠とポイントを使い切りました'); break; }
+    if (receipt.creatorShare) state.rewards.pending = +(state.rewards.pending + receipt.creatorShare).toFixed(1);
+    t.typing = c.id; render(); scrollTalk();
+    const transcript = t.log.slice(0, -1).filter((m) => m.role !== 'event')
+      .map((m) => ({ who: m.role === 'me' ? 'ユーザ' : findChara(m.cid)?.name ?? '？', text: m.text }));
+    // 呼びかけの名前（「シオン、」など）は本文から外して渡す
+    const body = text.replace(new RegExp(`(^|[、。\\s])(${c.name}|${c.name.replace(/先生$/, '')})(さん|先生)?[、,，\\s]*`), '$1').trim() || text;
+    const reply = await getReply(c, body, { transcript, members, talk: true, fallbackIndex: t.log.length });
+    t.log.push({ role: 'ai', cid: c.id, ...reply });
+    t.last = c.id;
+    if (t.auto) speak(reply.text, reply.lang ?? (c.persona === 'language' ? 'en-US' : 'ja-JP'), { ...voiceOf(c), queue: true });
+  }
+  t.busy = false; t.typing = null;
+  render(); scrollTalk();
+}
+function scrollTalk() { const el = document.getElementById('talk-log'); if (el) el.scrollTop = el.scrollHeight; }
+
+function talkPanel() {
+  const t = state.talk;
+  const members = t.members.map(findChara).filter(Boolean);
+  const toggle = (c) => {
+    t.members = t.members.includes(c.id) ? t.members.filter((x) => x !== c.id) : [...t.members, c.id];
+    if (t.members.length > 4) { t.members = t.members.slice(-4); toast('一度に話せるのは4人までです'); }
+    render();
+  };
+  const log = h('div', { class: 'talk-log', id: 'talk-log' },
+    t.log.length ? t.log.map((m) => {
+      if (m.role === 'me') return h('div', { class: 'bubble me' }, m.text);
+      const c = findChara(m.cid);
+      const tr = m.ja ? h('div', { class: 'tr', hidden: !m.showJa }, m.ja) : null;
+      return h('div', { class: 'bubble ai' }, h('div', { class: 'who' }, avatar(c, 20), c.name), richText(m.text), tr,
+        h('div', { class: 'bubble-tools' },
+          m.ja && h('button', { type: 'button', class: 'mini', onclick: () => { m.showJa = !m.showJa; tr.hidden = !m.showJa; } }, '訳'),
+          h('button', { type: 'button', class: 'mini', onclick: () => speak(m.text, m.lang ?? (c.persona === 'language' ? 'en-US' : 'ja-JP'), voiceOf(c)) }, '読み上げ')));
+    }) : h('div', { class: 'empty' }, members.length > 1
+      ? `たとえば「${members[0].name}、今日の予定は？」のように名前を呼ぶと、そのキャラが答えます。「みんな」と呼べば全員が答えます。`
+      : members.length ? `${members[0].name}に話しかけてみましょう。` : '上から話したい相棒を選んでください（4人まで）。'),
+    t.typing && h('div', { class: 'typing' }, `${findChara(t.typing).name}が考え中…`));
+  const input = h('textarea', { id: 'talk-input', placeholder: members.length > 1 ? '名前を呼んで話しかける（Ctrl+Enter で送信）' : 'メッセージ（Ctrl+Enter で送信）', maxlength: 2000 });
+  const send = () => { const v = input.value; input.value = ''; sendTalk(v); };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(); });
+  setTimeout(scrollTalk);
+  return h('section', { class: 'talk' },
+    h('div', { class: 'row', style: 'justify-content:space-between' }, h('h2', {}, '話す相手'),
+      h('label', { class: 'row small', for: 'talk-auto' }, h('input', { id: 'talk-auto', type: 'checkbox', style: 'width:auto', checked: t.auto, onchange: (e) => { t.auto = e.target.checked; if (!t.auto) try { speechSynthesis.cancel(); } catch {} } }), '返答を声で聞く')),
+    h('div', { class: 'members', role: 'group', 'aria-label': '話す相手' }, (state.companions.length ? state.companions.map(findChara) : allCharacters()).map((c) =>
+      h('button', { type: 'button', class: 'member', 'aria-pressed': t.members.includes(c.id) ? 'true' : 'false', onclick: () => toggle(c) }, avatar(c, 24), c.name))),
+    aiState(),
+    log,
+    h('div', { class: 'composer-row' }, micButton(input, (v) => { input.value = ''; sendTalk(v); }), input,
+      h('button', { type: 'button', class: 'btn coach', disabled: t.busy, onclick: send }, '送信')),
+    h('div', { class: 'row' }, t.log.length > 0 && h('button', { type: 'button', class: 'btn ghost small', onclick: () => { t.log = []; t.last = null; render(); } }, '会話をクリア'),
+      h('span', { class: 'small muted' }, '返答するキャラの数だけ会話回数（またはポイント）を使います。')));
+}
+
+// =====================================================================
+// 画面：共通
+// =====================================================================
+function renderNav() {
+  const unread = state.inbox.filter((m) => !m.read).length;
+  const items = state.onboarded
+    ? [['home', 'ホーム'], ['discover', 'さがす'], ['talk', 'トーク'], ['notes', 'ノート'], ['settings', '設定']]
+    : [['home', 'はじめる'], ['discover', 'さがす']];
+  document.getElementById('nav').replaceChildren(...[
+    ...items.map(([v, label]) => h('button', { type: 'button', 'aria-current': state.view === v ? 'page' : false, onclick: () => go(v) }, label)),
+    state.onboarded && h('button', { type: 'button', 'aria-current': state.view === 'inbox' ? 'page' : false, onclick: () => go('inbox') }, 'お知らせ', unread ? h('span', { class: 'badge-dot' }, String(unread)) : null),
+  ].filter(Boolean));
+}
+
+function usagePanel() {
+  const plan = PLANS[state.plan];
+  const pct = Math.min(100, (state.used / plan.msgs) * 100);
+  return h('div', { class: 'status' },
+    h('div', { class: 'status-line' },
+      h('span', {}, `${plan.name}プラン ・ 会話 ${state.used.toLocaleString()} / ${plan.msgs.toLocaleString()}回（${state.plan === 'free' ? '毎日リセット' : '毎月リセット'}）`),
+      h('span', { class: 'meta' }, `有償 ${state.points.paid}pt ・ 無償 ${state.points.free}pt`)),
+    h('div', { class: 'meter-bar' }, h('div', { class: 'meter-fill', style: `width:${pct}%` })));
+}
+
+function charaCard(c) {
+  const isCoach = hasTools(c);
+  return h('button', { type: 'button', class: isCoach ? 'chara is-coach' : 'chara', onclick: () => go('chara', c.id) },
+    h('div', { class: 'chara-head' }, avatar(c), h('div', {}, h('div', { class: 'chara-name' }, c.name), h('div', { class: 'meta' }, `会話 ${c.chats.toLocaleString()} ・ by ${c.creator}`))),
+    h('p', {}, c.tagline),
+    h('div', { class: 'chips' }, c.persona !== 'chat' && h('span', { class: 'chip coach' }, c.persona === 'other' ? (c.role || 'その他') : PERSONAS[c.persona].label), c.tags.map((t) => h('span', { class: 'chip' }, t))));
+}
+
+// =====================================================================
+// 画面：さがす
+// =====================================================================
+function discoverView() {
+  const all = [...state.myCharacters.filter((c) => c.visibility === 'public'), ...characters];
+  const q = state.search.trim();
+  const match = (c) => !q || c.name.includes(q) || c.tagline.includes(q) || c.tags.some((t) => t.includes(q)) || PERSONAS[c.persona].label.includes(q);
+  const sort = (list) => state.sort === 'new' ? [...list].sort((a, b) => b.id - a.id) : [...list].sort((a, b) => b.chats - a.chats);
+  const coaches = sort(all.filter((c) => hasTools(c) && match(c)));
+  const others = sort(all.filter((c) => !hasTools(c) && match(c)));
+  const search = h('input', { id: 'search', type: 'search', placeholder: 'キャラ名・タグで検索（例：筋トレ、簿記）', value: state.search,
+    oninput: (e) => { state.search = e.target.value; const pos = e.target.selectionStart; render(); const el = document.getElementById('search'); el.focus(); el.setSelectionRange(pos, pos); } });
+  return [
+    h('div', { class: 'stack' }, h('h1', {}, 'さがす'),
+      h('p', { class: 'muted' }, '気に入った相手を「相棒」にすると、ホームからすぐ話せます。')),
+    h('div', { class: 'row' }, h('div', { style: 'flex:1;min-width:200px' }, search),
+      h('button', { type: 'button', class: state.sort === 'popular' ? 'btn' : 'btn ghost', onclick: () => { state.sort = 'popular'; render(); } }, '人気'),
+      h('button', { type: 'button', class: state.sort === 'new' ? 'btn' : 'btn ghost', onclick: () => { state.sort = 'new'; render(); } }, '新着')),
+    coaches.length > 0 && h('section', { class: 'coach-intro' },
+      h('div', { class: 'section-head' }, h('h2', {}, '公式の相棒'),
+        h('p', { class: 'small muted' }, 'トレーナー、先生、秘書、恋人、語学、通訳。予定や記録、あなたのことを覚えていて、毎日を手伝ってくれます。')),
+      h('div', { class: 'grid' }, coaches.map(charaCard))),
+    h('section', { class: 'stack' }, h('h2', {}, 'みんなのキャラ'),
+      others.length ? h('div', { class: 'grid' }, others.map(charaCard)) : h('div', { class: 'empty' }, `「${q}」に一致するキャラはいません。`)),
+  ];
+}
+
+// =====================================================================
+// 画面：キャラ詳細
+// =====================================================================
+function charaView(id) {
+  const c = findChara(id);
+  const isCoach = hasTools(c);
+  const features = {
+    trainer: ['目標・日数・場所に合わせたメニュー作り', '前回の記録から今日の目標重量を提案', '痛みや疲れに合わせてメニューを調整', '週ごとの実施回数と重量の伸びをグラフで確認'],
+    tutor: ['試験日から逆算した学習計画', '苦手分野を優先する小テストと解説', '間違えた問題の復習リスト', '分野別の正答率と学習日数を記録'],
+    secretary: ['話しかけるだけで予定・タスクを登録', '毎朝、その日の予定と期限が近いタスクをお知らせ', '空き時間の確認と、日程調整メールの下書き', '会議メモから決定事項とToDoを抜き出す'],
+    partner: ['好きなもの・予定・記念日を会話から覚える', '覚えたことは「ふたりの記録」で確認・削除できる', '朝と夜に、予定に合わせたメッセージが届く', 'ボイスでメッセージを聞ける'],
+    language: ['カフェ・空港・職場などの場面練習（達成目標つき）', '間違えた表現をその場で添削し、単語帳に追加', '日本語訳と読み上げをワンタップで', '単語帳の復習（覚えた順に間隔をあけて出題）'],
+    interpreter: ['話した言語を自動で判別し、日本語⇄英語・中国語・韓国語に通訳', '訳文を相手の言語の音声で読み上げ', 'マイクで話しかけるだけ（音声入力）', 'トークに呼ぶと、その場の会話を通訳'],
+  }[c.persona];
+  return [
+    h('div', { class: 'chara-head' }, avatar(c, 56), h('div', {}, h('h1', {}, c.name), h('div', { class: 'meta' }, `会話 ${c.chats.toLocaleString()} ・ by ${c.creator}`))),
+    h('p', {}, c.tagline),
+    h('div', { class: 'chips' }, c.persona !== 'chat' && h('span', { class: 'chip coach' }, c.persona === 'other' ? (c.role || 'その他') : PERSONAS[c.persona].label), c.tags.map((t) => h('span', { class: 'chip' }, t))),
+    c.persona === 'other' && c.role && h('div', { class: 'stack' }, h('div', { class: 'label' }, '役割'), h('div', { class: 'block' }, c.role)),
+    isCoach && h('div', { class: 'coach-intro' }, h('h2', {}, `${c.name}ができること`), h('ul', { style: 'margin:0;padding-left:1.2em' }, features.map((f) => h('li', {}, f)))),
+    c.world && h('div', { class: 'stack' }, h('div', { class: 'label' }, '基本設定'), h('div', { class: 'block' }, c.world)),
+    c.profile && h('div', { class: 'stack' }, h('div', { class: 'label' }, 'プロフィール'), h('div', { class: 'block' }, c.profile)),
+    c.opening && h('div', { class: 'stack' }, h('div', { class: 'label' }, '最初のひとこと'), h('div', { class: 'block' }, richText(c.opening))),
+    c.persona === 'partner' && h('p', { class: 'small muted' }, '恋人ペルソナは、本番では年齢確認のあとに利用できます。表現は全年齢向けのガイドラインの範囲に限ります。'),
+    h('div', { class: 'row' }, h('button', { type: 'button', class: isCoach ? 'btn coach' : 'btn', onclick: () => {
+      if (!state.conversations[c.id]) { state.conversations[c.id] = []; c.chats++; }
+      if (isCoach) ensureCoach(c);
+      go('chat', c.id, needsSetup(c) ? 'plan' : 'chat');
+    } }, state.conversations[c.id] ? '続きから' : (isCoach ? 'はじめる' : '会話をはじめる')),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => talkWith([c.id]) }, c.persona === 'interpreter' ? '通訳で使う' : '声で話す'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => {
+        if (isCompanion(c)) { state.companions = state.companions.filter((x) => x !== c.id); toast(`${c.name}を相棒から外しました`); }
+        else { state.companions = [...state.companions, c.id]; state.onboarded = true; toast(`${c.name}を相棒にしました`); }
+        render();
+      } }, isCompanion(c) ? '相棒から外す' : '相棒にする')),
+    tweakCard(c),
+  ];
+}
+
+// =====================================================================
+// 画面：会話（コーチならタブつき）
+// =====================================================================
+function chatView(id) {
+  const c = findChara(id);
+  const persona = PERSONAS[c.persona];
+  const header = h('div', { class: 'row', style: 'justify-content:space-between' },
+    h('div', { class: 'chara-head' }, avatar(c, 36), h('div', {}, h('h2', {}, c.name), persona.tabs.length > 0 && h('div', { class: 'meta' }, persona.label))),
+    h('button', { type: 'button', class: 'btn ghost small', onclick: () => go('chara', id) }, '設定を見る'));
+  if (!persona.tabs.length) return [header, usagePanel(), ...conversation(c)];
+  const tabs = h('div', { class: 'tabs', role: 'tablist' }, persona.tabs.map(([key, label]) =>
+    h('button', { type: 'button', role: 'tab', 'aria-selected': state.tab === key ? 'true' : 'false', onclick: () => { state.tab = key; render(); } }, label)));
+  const body = {
+    chat: () => [c.persona === 'interpreter' && pairSelect(c), usagePanel(), ...conversation(c)],
+    plan: () => c.persona === 'trainer' ? trainerPlan(c) : tutorPlan(c),
+    log: () => trainerLog(c),
+    quiz: () => tutorQuiz(c),
+    progress: () => ({ trainer: trainerProgress, tutor: tutorProgress, language: languageProgress })[c.persona](c),
+    today: () => secretaryToday(c),
+    tasks: () => secretaryTasks(c),
+    memo: () => secretaryMemo(c),
+    memories: () => partnerMemories(c),
+    messages: () => partnerMessages(c),
+    scenes: () => languageScenes(c),
+    cards: () => languageCards(c),
+  }[state.tab]();
+  return [header, tabs, ...[body].flat()];
+}
+
+function conversation(c) {
+  const log = state.conversations[c.id] ??= [];
+  const list = h('div', { class: 'chat' });
+  if (c.opening) list.append(h('div', { class: 'bubble ai' }, richText(c.opening)));
+  for (const m of log) list.append(renderMessage(c, m));
+  const note = state.lastCharge
+    ? h('div', { class: state.lastCharge.via === 'points' ? 'charged points' : 'charged' },
+      state.lastCharge.via === 'points' ? `今回：${COST_PER_MSG}pt 消費（プラン枠を使い切ったため）` : '今回：プラン枠から1回')
+    : null;
+  const input = h('textarea', { id: 'msg', placeholder: 'メッセージを入力（Ctrl+Enter で送信）', maxlength: 2000 });
+  const send = h('button', { type: 'button', class: c.persona === 'chat' ? 'btn' : 'btn coach' }, '送信');
+  const submit = (preset) => {
+    const text = (preset ?? input.value).trim();
+    if (!text) return;
+    const receipt = charge(c);
+    if (!receipt) {
+      render();
+      toast('今日の無料枠とポイントを使い切りました。プランかポイントで続けられます。');
+      document.getElementById('msg').value = text;
+      return;
+    }
+    if (receipt.creatorShare) state.rewards.pending = +(state.rewards.pending + receipt.creatorShare).toFixed(1);
+    state.lastCharge = receipt;
+    log.push({ role: 'me', text });
+    render();
+    document.querySelector('.chat').append(h('div', { class: 'typing' }, `${c.name}が入力中…`));
+    window.scrollTo(0, document.body.scrollHeight);
+    const transcript = log.slice(0, -1).filter((m) => m.role !== 'event').map((m) => ({ who: m.role === 'me' ? 'ユーザ' : c.name, text: m.text }));
+    setTimeout(async () => {
+      const reply = await getReply(c, text, { transcript, members: [c], fallbackIndex: Math.floor(log.length / 2) });
+      log.push({ role: 'ai', ...reply });
+      if (state.view === 'chat' && state.param === c.id && state.tab === 'chat') { render(); window.scrollTo(0, document.body.scrollHeight); }
+      if (c.persona === 'interpreter' && reply.lang) speak(reply.text, reply.lang, voiceOf(c));
+    }, ai ? 0 : 700);
+  };
+  const mic = micButton(input, (t) => submit(t), c.persona === 'interpreter' ? 'auto' : 'ja-JP');
+  send.addEventListener('click', () => submit());
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit(); });
+  const quicks = {
+    trainer: ['今日のメニューは？', '膝が痛い', 'やる気が出ない', 'ちょっときつい', '食事はどうする？'],
+    tutor: ['試験まであと何日？', '苦手な分野は？', '小テストしたい', '未払金とは？', 'やる気が出ない'],
+    secretary: ['今日の予定は？', '明日15時にB社と電話', '金曜までに見積書をタスクに', '明日の空き時間は？', '日程調整のメールを書いて'],
+    partner: ['ただいま、今日は疲れた', '実はカレーが好きなんだ', '明日は面接があるんだ', 'おやすみ'],
+    language: c.persona === 'language' ? languageQuicks(c) : null,
+  }[c.persona];
+  setTimeout(() => window.scrollTo(0, document.body.scrollHeight));
+  return [
+    list, note,
+    h('div', { class: 'composer' },
+      quicks && h('div', { class: 'quick' }, quicks.map((q) => h('button', { type: 'button', onclick: () => submit(q) }, q))),
+      h('div', { class: 'composer-row' }, mic, input, send)),
+  ];
+}
+
+function renderMessage(c, m) {
+  if (m.role === 'event') {
+    if (m.fix) {
+      return h('div', { class: 'bubble event' }, h('div', { class: 'fix' },
+        h('span', { class: 'label' }, '添削'),
+        h('span', {}, h('span', { class: 'wrong' }, m.fix.wrong), '  →  ', h('span', { class: 'right' }, m.fix.right)),
+        h('span', { class: 'small' }, m.fix.note),
+        h('span', { class: 'small muted' }, '単語帳に追加しました')));
+    }
+    return h('div', { class: 'bubble event' }, m.text);
+  }
+  if (m.role === 'me') return h('div', { class: 'bubble me' }, m.text);
+  const lang = m.lang ?? (c.persona === 'language' ? 'en-US' : 'ja-JP');
+  const canSpeak = true;
+  const tr = m.ja ? h('div', { class: 'tr', hidden: !m.showJa }, m.ja) : null;
+  return h('div', { class: 'bubble ai' }, richText(m.text), tr,
+    (m.ja || canSpeak) && h('div', { class: 'bubble-tools' },
+      m.ja && h('button', { type: 'button', class: 'mini', onclick: () => { m.showJa = !m.showJa; tr.hidden = !m.showJa; } }, '訳'),
+      canSpeak && h('button', { type: 'button', class: 'mini', onclick: () => speak(m.text, lang, voiceOf(c)) }, '読み上げ')));
+}
+
+// =====================================================================
+// 秘書：今日／タスク／メモ要約
+// =====================================================================
+function secretaryToday(c) {
+  const sec = ensureCoach(c);
+  const evs = sec.events.filter((e) => sameDay(e.date, today)).sort((a, b) => a.time.localeCompare(b.time));
+  const due = sec.tasks.filter((t) => !t.done && t.due && t.due <= addDays(2)).sort((a, b) => a.due - b.due);
+  const onBox = h('input', { id: 's-brief-on', type: 'checkbox', checked: sec.briefing.on, onchange: (e) => { sec.briefing.on = e.target.checked; toast(sec.briefing.on ? '毎朝のブリーフィングをオンにしました' : 'オフにしました'); } });
+  const timeBox = h('input', { id: 's-brief-time', type: 'time', value: sec.briefing.time, onchange: (e) => { sec.briefing.time = e.target.value; } });
+  return [
+    h('div', { class: 'card' },
+      h('div', { class: 'switch' }, h('label', { class: 'row', for: 's-brief-on' }, onBox, '毎朝のブリーフィングを届ける'), timeBox),
+      h('p', { class: 'small muted' }, '本番では、この時間にLINEやプッシュ通知で届きます。')),
+    h('div', { class: 'stack' }, h('h3', {}, `${md(today)}（${WD[today.getDay()]}）の予定`),
+      evs.length ? h('div', { class: 'list' }, evs.map((e) => h('div', { class: 'item' }, h('span', { class: 'time' }, e.time), h('span', { class: 'grow' }, e.title))))
+        : h('div', { class: 'empty' }, '今日の予定はありません')),
+    h('div', { class: 'stack' }, h('h3', {}, '期限が近いタスク'),
+      due.length ? h('div', { class: 'list' }, due.map((t) => h('div', { class: 'item' }, h('span', { class: 'time' }, dayLabel(t.due)), h('span', { class: 'grow' }, t.title))))
+        : h('div', { class: 'empty' }, '期限が近いタスクはありません')),
+    h('p', { class: 'small muted' }, `空いている時間：${freeSlots(sec, today).join('、') || 'なし'}`),
+    h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn coach', onclick: () => {
+      say(c.id, `おはようございます。${briefing(sec)}`); state.tab = 'chat'; render(); window.scrollTo(0, document.body.scrollHeight);
+    } }, 'ブリーフィングを聞く')),
+  ];
+}
+
+function secretaryTasks(c) {
+  const sec = ensureCoach(c);
+  const title = h('input', { id: 's-task', placeholder: '例：見積書を送る' });
+  const due = h('select', { id: 's-due' }, [['0', '今日'], ['1', '明日'], ['fri', '金曜'], ['', '期限なし']].map(([v, l]) => h('option', { value: v }, l)));
+  const add = () => {
+    if (!title.value.trim()) { toast('タスク名を入力してください'); return; }
+    const d = due.value === '' ? null : due.value === 'fri' ? parseDay('金曜') : addDays(Number(due.value));
+    sec.tasks.push({ id: sec.nextId++, title: title.value.trim(), due: d, done: false });
+    toast('タスクを追加しました'); render();
+  };
+  const dueKey = (t) => (t.due ? t.due.getTime() : Number.MAX_SAFE_INTEGER);
+  const sorted = [...sec.tasks].sort((a, b) => (a.done - b.done) || (dueKey(a) - dueKey(b)));
+  return [
+    h('div', { class: 'card' }, h('h3', {}, 'タスクを追加'),
+      h('div', { class: 'row' }, h('div', { style: 'flex:1;min-width:160px' }, title), h('div', { style: 'width:7.5em' }, due), h('button', { type: 'button', class: 'btn coach', onclick: add }, '追加')),
+      h('p', { class: 'small muted' }, '会話で「金曜までに〇〇をタスクに」と話しかけても追加できます。')),
+    sorted.length ? h('div', { class: 'list' }, sorted.map((t) => h('label', { class: t.done ? 'item done' : 'item' },
+      h('input', { type: 'checkbox', checked: t.done, onchange: (e) => { t.done = e.target.checked; if (t.done) toast(`完了：${t.title}`); render(); } }),
+      h('span', { class: 'grow' }, t.title),
+      h('span', { class: 'meta' }, t.due ? `${dayLabel(t.due)}まで` : '期限なし'))))
+      : h('div', { class: 'empty' }, 'タスクはまだありません'),
+  ];
+}
+
+function secretaryMemo(c) {
+  const sec = ensureCoach(c);
+  const area = h('textarea', { id: 's-memo', style: 'min-height:150px', placeholder: '会議のメモや議事録を貼り付けてください' });
+  area.value = sec.memo;
+  area.addEventListener('input', () => { sec.memo = area.value; });
+  const sum = sec.summary;
+  return [
+    h('div', { class: 'card' }, h('h3', {}, '会議メモを要約する'), area,
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn coach', onclick: () => { sec.summary = summarizeMemo(area.value); render(); } }, '要約する'))),
+    sum && h('div', { class: 'card' },
+      h('h3', {}, sum.title || '要約'),
+      h('div', { class: 'label' }, '決まったこと'),
+      sum.decisions.length ? h('ul', { style: 'margin:0;padding-left:1.2em' }, sum.decisions.map((d) => h('li', {}, d))) : h('p', { class: 'muted small' }, '見つかりませんでした'),
+      h('div', { class: 'label' }, 'ToDo'),
+      sum.todos.length ? h('div', { class: 'list' }, sum.todos.map((t) => h('div', { class: 'item' }, h('span', { class: 'grow' }, t),
+        h('button', { type: 'button', class: 'btn ghost small', onclick: () => {
+          sec.tasks.push({ id: sec.nextId++, title: cleanTitle(t.replace(/^[^：:]+[：:]/, '')) || t, due: parseDay(t), done: false });
+          toast('タスクに追加しました');
+        } }, 'タスクに追加'))))
+        : h('p', { class: 'muted small' }, '見つかりませんでした'),
+      h('p', { class: 'small muted' }, 'デモはキーワードで抜き出しています。本番はLLMが要約し、担当者と期限も整理します。')),
+  ];
+}
+
+// =====================================================================
+// 恋人：ふたりの記録／メッセージ
+// =====================================================================
+function partnerMemories(c) {
+  const p = ensureCoach(c);
+  const kinds = ['好きなもの', '苦手なもの', '予定', '記念日'];
+  const together = p.since ? Math.round((today - p.since) / DAY) : null;
+  const nextMilestone = together != null ? Math.ceil((together + 1) / 100) * 100 : null;
+  return [
+    together != null && h('div', { class: 'stats' },
+      h('div', { class: 'stat' }, h('span', { class: 'label' }, '付き合って'), h('span', { class: 'stat-value' }, `${together}日`)),
+      h('div', { class: 'stat' }, h('span', { class: 'label' }, `${nextMilestone}日記念まで`), h('span', { class: 'stat-value' }, `あと${nextMilestone - together}日`))),
+    h('p', { class: 'small muted' }, `${c.name}は会話から大事なことを覚えます。消したものは忘れて、会話にも出てこなくなります。`),
+    ...kinds.map((k) => {
+      const xs = p.memories.filter((m) => m.kind === k);
+      return h('div', { class: 'stack' }, h('h3', {}, k),
+        xs.length ? h('div', { class: 'list' }, xs.map((m) => h('div', { class: 'item' },
+          h('span', { class: 'grow' }, m.text, m.date ? h('span', { class: 'meta' }, `　${dayLabel(m.date)}`) : null),
+          h('button', { type: 'button', class: 'mini', onclick: () => { p.memories = p.memories.filter((x) => x.id !== m.id); toast(`「${m.text}」を忘れました`); render(); } }, '忘れてもらう'))))
+          : h('p', { class: 'muted small' }, 'まだありません'));
+    }),
+  ];
+}
+
+function partnerMorning(c) {
+  const p = ensureCoach(c);
+  const soon = p.memories.filter((m) => m.kind === '予定' && m.date >= today).sort((a, b) => a.date - b.date)[0];
+  const fav = p.memories.find((m) => m.kind === '好きなもの')?.text;
+  if (soon && sameDay(soon.date, today)) return `おはよう。今日は${soon.text}の日だね。あなたならきっと大丈夫。終わったら一番に教えてね。`;
+  if (soon && sameDay(soon.date, addDays(1))) return `おはよう。明日は${soon.text}だね。今日は早めに寝て、準備ばっちりにしよう。`;
+  return `おはよう！ 今日もいってらっしゃい。${fav ? `帰りに${fav}でも寄ってきたら？` : 'お昼ちゃんと食べてね。'}`;
+}
+
+function partnerMessages(c) {
+  const p = ensureCoach(c);
+  const row = (key, label) => h('div', { class: 'switch' },
+    h('label', { class: 'row', for: `p-${key}` }, h('input', { id: `p-${key}`, type: 'checkbox', checked: p.msgs[key].on, onchange: (e) => { p.msgs[key].on = e.target.checked; } }), label),
+    h('input', { id: `p-${key}-time`, type: 'time', value: p.msgs[key].time, onchange: (e) => { p.msgs[key].time = e.target.value; } }));
+  const morning = partnerMorning(c);
+  const night = 'おやすみ。今日も話してくれてありがとう。明日もいい日になりますように。';
+  return [
+    h('div', { class: 'card' }, h('h3', {}, `${c.name}から届くメッセージ`), row('morning', 'おはよう'), row('night', 'おやすみ'),
+      h('p', { class: 'small muted' }, '本番ではLINEやプッシュ通知で届きます。覚えている予定や好きなものに合わせて、毎日内容が変わります。')),
+    h('div', { class: 'card' }, h('h3', {}, '明日の朝のメッセージ（プレビュー）'), h('div', { class: 'preview' }, morning),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn ghost small', onclick: () => speak(morning, 'ja-JP') }, 'ボイスで聞く'))),
+    h('div', { class: 'card' }, h('h3', {}, '今夜のメッセージ（プレビュー）'), h('div', { class: 'preview' }, night)),
+  ];
+}
+
+// =====================================================================
+// 語学：シーン／単語帳／進捗
+// =====================================================================
+function languageQuicks(c) {
+  const L = ensureCoach(c);
+  const sc = SCENES[L.scene];
+  const done = L.done[L.scene] ?? [];
+  const hints = sc.goals.filter((_, i) => !done[i]).map((g) => g.hint);
+  return [...hints, 'I am agree with you.', 'He don\'t like coffee.'];
+}
+
+function languageScenes(c) {
+  const L = ensureCoach(c);
+  return [
+    h('p', { class: 'small muted' }, '場面ごとに「できるようになりたいこと」が決まっています。全部言えたらシーン達成です。'),
+    ...Object.entries(SCENES).map(([key, sc]) => {
+      const done = L.done[key] ?? [];
+      const n = done.filter(Boolean).length;
+      return h('div', { class: 'card' },
+        h('div', { class: 'row', style: 'justify-content:space-between' }, h('h3', {}, sc.title),
+          L.completed[key] ? h('span', { class: 'badge coach' }, '達成') : L.scene === key ? h('span', { class: 'chip coach' }, '練習中') : null),
+        h('div', { class: 'stack', style: 'gap:4px' }, sc.goals.map((g, i) => h('div', { class: done[i] ? 'goal done' : 'goal' }, h('span', { class: 'mark' }, '✓'), g.label))),
+        h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn coach small', onclick: () => {
+          if (L.completed[key]) { L.completed[key] = false; L.done[key] = sc.goals.map(() => false); }
+          L.scene = key;
+          say(c.id, `シーン開始：${sc.title}`, 'event');
+          say(c.id, sc.opener.en, 'ai', { ja: sc.opener.ja });
+          state.tab = 'chat'; render(); window.scrollTo(0, document.body.scrollHeight);
+        } }, L.completed[key] ? 'もう一度' : n ? '続きから' : '練習する')));
+    }),
+  ];
+}
+
+function languageCards(c) {
+  const L = ensureCoach(c);
+  const due = L.cards.filter((x) => x.due <= today);
+  if (!due.length) return [h('div', { class: 'empty' }, `今日の復習は終わりです。単語帳には${L.cards.length}枚あります。`)];
+  const card = due[state.flash % due.length];
+  const back = h('div', { class: 'tr', style: 'text-align:center;font-size:15px', hidden: true }, card.ja);
+  const answered = h('div', { class: 'row', style: 'justify-content:center', hidden: true },
+    h('button', { type: 'button', class: 'btn ghost', onclick: () => { state.flash++; render(); } }, 'もう一度'),
+    h('button', { type: 'button', class: 'btn coach', onclick: () => {
+      card.box = Math.min(card.box + 1, 4);
+      card.due = addDays([1, 3, 7, 14, 30][card.box]);
+      toast(`覚えた！ 次は${dayLabel(card.due)}に出します`); render();
+    } }, '覚えた'));
+  const reveal = h('button', { type: 'button', class: 'btn coach', onclick: () => { back.hidden = false; answered.hidden = false; reveal.hidden = true; } }, '意味を見る');
+  return [
+    h('p', { class: 'small muted' }, `今日の復習 ${due.length}枚 ・ 単語帳 全${L.cards.length}枚。覚えたカードは、1日後→3日後→1週間後…と間隔をあけて出ます。`),
+    h('div', { class: 'card' },
+      h('div', { class: 'flash' }, card.en), back,
+      h('div', { class: 'row', style: 'justify-content:center' }, reveal, h('button', { type: 'button', class: 'btn ghost', onclick: () => speak(card.en, 'en-US') }, '読み上げ')),
+      answered),
+  ];
+}
+
+function languageProgress(c) {
+  const L = ensureCoach(c);
+  const scenesDone = Object.values(L.completed).filter(Boolean).length;
+  let streak = 0;
+  for (let d = 0; d < 60; d++) { if (L.studyDays.some((x) => sameDay(x, daysAgo(d)))) streak++; else if (d > 0) break; }
+  return [
+    L.fixes.some((f) => f.example) && h('p', { class: 'small muted' }, h('span', { class: 'example' }, '例'), ' 使い始めて1週間の状態を例として入れています。'),
+    h('div', { class: 'stats' },
+      h('div', { class: 'stat' }, h('span', { class: 'label' }, 'シーン達成'), h('span', { class: 'stat-value' }, `${scenesDone} / ${Object.keys(SCENES).length}`)),
+      h('div', { class: 'stat' }, h('span', { class: 'label' }, '直した表現'), h('span', { class: 'stat-value' }, `${L.fixes.length}`)),
+      h('div', { class: 'stat' }, h('span', { class: 'label' }, '連続学習'), h('span', { class: 'stat-value' }, `${streak}日`))),
+    h('div', { class: 'card' }, h('h3', {}, '添削の履歴'),
+      L.fixes.length ? h('div', { class: 'list' }, [...L.fixes].reverse().map((f) => h('div', { class: 'item' }, h('div', { class: 'grow fix' },
+        h('span', {}, h('span', { class: 'wrong' }, f.wrong), '  →  ', h('span', { class: 'right' }, f.right)), h('span', { class: 'small muted' }, f.note)))))
+        : h('p', { class: 'muted small' }, 'まだありません')),
+  ];
+}
+
+// =====================================================================
+// トレーナー：メニュー／記録／進捗
+// =====================================================================
+function trainerPlan(c) {
+  const coach = state.coach[c.id] ??= {};
+  if (!coach.setup || coach.editing) {
+    const sel = (id, opts, val) => h('select', { id }, opts.map(([v, l]) => h('option', { value: v, selected: String(val) === String(v) }, l)));
+    const cur = coach.setup ?? { goal: 'muscle', days: 3, place: 'gym', level: 'beginner' };
+    const f = {
+      goal: sel('t-goal', Object.entries(GOALS).map(([k, g]) => [k, g.label]), cur.goal),
+      days: sel('t-days', [[2, '週2回'], [3, '週3回'], [4, '週4回']], cur.days),
+      place: sel('t-place', [['gym', 'ジム'], ['home', '自宅（器具なし）']], cur.place),
+      level: sel('t-level', [['beginner', 'はじめて・久しぶり'], ['intermediate', '半年以上続けている']], cur.level),
+    };
+    const labels = { goal: '目標', days: '通える頻度', place: '場所', level: '経験' };
+    return h('div', { class: 'card' },
+      h('h3', {}, `${c.name}にメニューを組んでもらう`),
+      h('p', { class: 'small muted' }, '本番では会話でヒアリングし、ケガや持病も確認してから組みます。'),
+      Object.entries(f).map(([k, el]) => h('label', { class: 'stack', style: 'gap:4px' }, h('span', { class: 'label' }, labels[k]), el)),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn coach', onclick: () => {
+        const setup = { goal: f.goal.value, days: Number(f.days.value), place: f.place.value, level: f.level.value };
+        Object.assign(coach, { setup, menu: generateMenu(setup), logs: coach.logs ?? [], next: 0, editing: false });
+        say(c.id, `よし、「${GOALS[setup.goal].label}」で週${setup.days}回のメニューを組んだ！最初の2週間はフォーム重視で、重さは控えめにいこう。`);
+        toast('メニューを作りました'); render();
+      } }, 'メニューを作る'), coach.setup && h('button', { type: 'button', class: 'btn ghost', onclick: () => { coach.editing = false; render(); } }, 'やめる')));
+  }
+  const g = GOALS[coach.setup.goal];
+  return [
+    h('div', { class: 'row', style: 'justify-content:space-between' },
+      h('p', { class: 'muted small' }, `${g.label} ・ 週${coach.setup.days}回 ・ ${coach.setup.place === 'gym' ? 'ジム' : '自宅'}`),
+      h('button', { type: 'button', class: 'btn ghost small', onclick: () => { coach.editing = true; render(); } }, '条件を変えて作り直す')),
+    ...coach.menu.map((d, i) => h('div', { class: 'card' },
+      h('div', { class: 'row', style: 'justify-content:space-between' }, h('h3', {}, `Day ${i + 1}　${d.name}`), i === coach.next && h('span', { class: 'badge coach' }, '次はこの日')),
+      h('div', { class: 'table-wrap', style: 'border:0' }, h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, '種目'), h('th', { class: 'num' }, 'セット'), h('th', { class: 'num' }, '回数'), h('th', { class: 'num' }, '目標'))),
+        h('tbody', {}, d.items.map((it) => { const sg = suggestFor(coach, it); return h('tr', {}, h('td', {}, it.ex), h('td', { class: 'num' }, it.sets), h('td', { class: 'num' }, it.reps), h('td', { class: 'num' }, sg.weight != null ? `${sg.weight}kg` : '自重')); })))),
+      d.cardio && h('p', { class: 'small muted' }, `＋ ${d.cardio}`))),
+    h('p', { class: 'small muted' }, '会話で「きつい」「物足りない」「膝が痛い」などと伝えると、メニューが調整されます。'),
+  ];
+}
+
+function trainerLog(c) {
+  const coach = state.coach[c.id];
+  if (!coach?.setup) return h('div', { class: 'empty' }, '先に「メニュー」タブでメニューを作ってください。');
+  const day = coach.menu[coach.next];
+  const rows = day.items.map((it) => {
+    const sg = suggestFor(coach, it);
+    const w = it.weight != null ? h('input', { class: 'log-input', type: 'number', step: '2.5', min: '0', value: sg.weight, 'aria-label': `${it.ex} 重量` }) : null;
+    const r = String(it.reps).includes('秒') ? null : h('input', { class: 'log-input', type: 'number', min: '0', value: sg.reps, 'aria-label': `${it.ex} 回数` });
+    const done = h('input', { type: 'checkbox', checked: true, style: 'width:auto', 'aria-label': `${it.ex} 実施` });
+    return { it, w, r, done, el: h('tr', {},
+      h('td', {}, h('div', {}, it.ex), sg.note && h('div', { class: 'up' }, sg.note)),
+      h('td', { class: 'num' }, w ? h('span', {}, w, ' kg') : '自重'),
+      h('td', { class: 'num' }, r ? h('span', {}, r, ' 回') : it.reps),
+      h('td', { class: 'num' }, done)) };
+  });
+  const save = () => {
+    const items = rows.filter((x) => x.done.checked).map((x) => ({ ex: x.it.ex, weight: x.w ? Number(x.w.value) : null, reps: x.r ? Number(x.r.value) : x.it.reps }));
+    if (!items.length) { toast('実施した種目にチェックを入れてください'); return; }
+    const prev = [...coach.logs].reverse();
+    const prs = items.filter((x) => x.weight != null && prev.flatMap((l) => l.items).filter((p) => p.ex === x.ex).every((p) => (p.weight ?? 0) < x.weight));
+    coach.logs.push({ date: new Date(), day: day.name, items });
+    coach.next = (coach.next + 1) % coach.menu.length;
+    const weekCount = coach.logs.filter((l) => l.date >= weekStart(today)).length;
+    say(c.id, `「${day.name}」の記録、受け取った！${items.length}種目やり切ったな。${prs.length ? `\n${prs.map((p) => `${p.ex} ${p.weight}kg`).join('、')}は自己ベストだ！` : ''}\n今週${weekCount}回目。次は「${coach.menu[coach.next].name}」の日だ。`, 'ai');
+    toast('記録しました'); state.tab = 'chat'; render(); window.scrollTo(0, document.body.scrollHeight);
+  };
+  return [
+    h('div', { class: 'card' },
+      h('h3', {}, `今日：${day.name}`),
+      h('p', { class: 'small muted' }, '目標は前回の記録から自動で入っています。実際にできた重さと回数に直して記録してください。'),
+      h('div', { class: 'table-wrap', style: 'border:0' }, h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, '種目'), h('th', { class: 'num' }, '重量'), h('th', { class: 'num' }, '回数'), h('th', { class: 'num' }, 'できた'))),
+        h('tbody', {}, rows.map((x) => x.el)))),
+      day.cardio && h('p', { class: 'small muted' }, `＋ ${day.cardio}`),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn coach', onclick: save }, '記録する'))),
+  ];
+}
+
+function barChart(values, labels, { unit = '', target = null, color = 'var(--coach)' } = {}) {
+  const W = 320, H = 150, pad = { l: 28, r: 8, t: 14, b: 22 };
+  const max = Math.max(target ?? 0, ...values, 1);
+  const bw = (W - pad.l - pad.r) / values.length;
+  const y = (v) => pad.t + (H - pad.t - pad.b) * (1 - v / max);
+  return s('svg', { class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': labels.map((l, i) => `${l} ${values[i]}${unit}`).join('、') },
+    [0, max].map((v) => s('text', { x: pad.l - 6, y: y(v) + 4, 'text-anchor': 'end' }, `${+v.toFixed(1)}`)),
+    s('line', { x1: pad.l, x2: W - pad.r, y1: y(0), y2: y(0), stroke: 'var(--line)' }),
+    target != null && s('line', { x1: pad.l, x2: W - pad.r, y1: y(target), y2: y(target), stroke: 'var(--muted)', 'stroke-dasharray': '4 4' }),
+    values.map((v, i) => [
+      s('rect', { x: pad.l + i * bw + bw * 0.2, y: y(v), width: bw * 0.6, height: Math.max(0, y(0) - y(v)), rx: 4, fill: color }),
+      s('text', { x: pad.l + i * bw + bw / 2, y: H - 6, 'text-anchor': 'middle' }, labels[i]),
+      v > 0 && s('text', { x: pad.l + i * bw + bw / 2, y: y(v) - 4, 'text-anchor': 'middle' }, `${v}${unit}`),
+    ]));
+}
+
+function lineChart(points, { unit = '' } = {}) {
+  const W = 320, H = 150, pad = { l: 34, r: 12, t: 16, b: 22 };
+  if (points.length < 2) return h('p', { class: 'muted small' }, '記録が2回以上たまるとグラフになります。');
+  const vals = points.map((p) => p.v);
+  const min = Math.floor(Math.min(...vals) / 5) * 5, max = Math.ceil(Math.max(...vals) / 5) * 5 || min + 5;
+  const x = (i) => pad.l + (W - pad.l - pad.r) * (i / (points.length - 1));
+  const y = (v) => pad.t + (H - pad.t - pad.b) * (1 - (v - min) / Math.max(1, max - min));
+  const d = points.map((p, i) => `${i ? 'L' : 'M'}${x(i)},${y(p.v)}`).join(' ');
+  const last = points.at(-1);
+  return s('svg', { class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': points.map((p) => `${p.label} ${p.v}${unit}`).join('、') },
+    [min, max].map((v) => [s('text', { x: pad.l - 6, y: y(v) + 4, 'text-anchor': 'end' }, `${v}`), s('line', { x1: pad.l, x2: W - pad.r, y1: y(v), y2: y(v), stroke: 'var(--line)' })]),
+    s('path', { d: `${d} L${x(points.length - 1)},${y(min)} L${x(0)},${y(min)} Z`, fill: 'var(--coach-soft)' }),
+    s('path', { d, fill: 'none', stroke: 'var(--coach)', 'stroke-width': 2.5 }),
+    points.map((p, i) => s('circle', { cx: x(i), cy: y(p.v), r: i === points.length - 1 ? 4.5 : 2.5, fill: 'var(--coach)' })),
+    s('text', { x: x(points.length - 1), y: y(last.v) - 9, 'text-anchor': 'end' }, `${last.v}${unit}`),
+    s('text', { x: x(0), y: H - 6, 'text-anchor': 'start' }, points[0].label),
+    s('text', { x: x(points.length - 1), y: H - 6, 'text-anchor': 'end' }, last.label));
+}
+
+function trainerProgress(c) {
+  const coach = state.coach[c.id];
+  if (!coach?.setup) return h('div', { class: 'empty' }, '記録がたまると、ここに進捗が表示されます。');
+  const weeks = [3, 2, 1, 0].map((n) => weekStart(new Date(today.getTime() - n * 7 * DAY)));
+  const perWeek = weeks.map((ws) => coach.logs.filter((l) => l.date >= ws && l.date < new Date(ws.getTime() + 7 * DAY)).length);
+  const main = coach.menu.flatMap((d) => d.items).find((it) => it.weight != null);
+  const trend = main ? coach.logs.flatMap((l) => l.items.filter((x) => x.ex === main.ex && x.weight != null).map((x) => ({ v: x.weight, label: md(l.date) }))) : [];
+  const total = coach.logs.length;
+  const volume = coach.logs.filter((l) => l.date >= weekStart(today)).flatMap((l) => l.items).reduce((s, x) => s + (x.weight ?? 0) * (Number(x.reps) || 0) * 3, 0);
+  const hasExample = coach.logs.some((l) => l.example);
+  return [
+    hasExample && h('p', { class: 'small muted' }, h('span', { class: 'example' }, '例'), ' 使い始めて3週間の状態を例として入れています。記録を追加すると反映されます。'),
+    h('div', { class: 'stats' },
+      h('div', { class: 'stat' }, h('span', { class: 'label' }, '今週'), h('span', { class: 'stat-value' }, `${perWeek[3]} / ${coach.setup.days}回`)),
+      h('div', { class: 'stat' }, h('span', { class: 'label' }, '累計'), h('span', { class: 'stat-value' }, `${total}回`)),
+      main && trend.length > 0 && h('div', { class: 'stat' }, h('span', { class: 'label' }, `${main.ex}の伸び`), h('span', { class: 'stat-value' }, `+${(trend.at(-1).v - trend[0].v).toFixed(1)}kg`))),
+    h('div', { class: 'card' }, h('h3', {}, '週ごとの実施回数'), h('p', { class: 'small muted' }, `点線は目標の週${coach.setup.days}回`),
+      barChart(perWeek, weeks.map((w, i) => (i === 3 ? '今週' : md(w))), { unit: '回', target: coach.setup.days })),
+    main && h('div', { class: 'card' }, h('h3', {}, `${main.ex}の重量（kg）`), lineChart(trend, { unit: 'kg' })),
+    volume > 0 && h('p', { class: 'small muted' }, `今週の総挙上量の目安：約${Math.round(volume).toLocaleString()}kg（重量×回数×3セットで概算）`),
+  ];
+}
+
+// =====================================================================
+// 先生：学習計画／小テスト／進捗
+// =====================================================================
+function tutorPlan(c) {
+  const coach = state.coach[c.id] ??= {};
+  if (!coach.setup || coach.editing) {
+    const cur = coach.setup ?? { exam: '日商簿記3級', examDate: iso(new Date(today.getTime() + 60 * DAY)), minutes: 60 };
+    const exam = h('select', { id: 'u-exam' }, h('option', { value: '日商簿記3級' }, '日商簿記3級'), h('option', { value: '', disabled: true }, '宅建・FP・TOEIC（今後追加）'));
+    const date = h('input', { id: 'u-date', type: 'date', value: cur.examDate, min: iso(new Date(today.getTime() + 7 * DAY)) });
+    const minutes = h('select', { id: 'u-min' }, [[30, '30分'], [60, '1時間'], [90, '1時間半'], [120, '2時間']].map(([v, l]) => h('option', { value: v, selected: cur.minutes === v }, l)));
+    return h('div', { class: 'card' },
+      h('h3', {}, `${c.name}と学習計画を立てる`),
+      h('label', { class: 'stack', style: 'gap:4px' }, h('span', { class: 'label' }, '資格'), exam),
+      h('label', { class: 'stack', style: 'gap:4px' }, h('span', { class: 'label' }, '試験日'), date),
+      h('label', { class: 'stack', style: 'gap:4px' }, h('span', { class: 'label' }, '1日に使える時間'), minutes),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn coach', onclick: () => {
+        if (!date.value || new Date(date.value) <= today) { toast('試験日は明日以降の日付を選んでください'); return; }
+        const setup = { exam: exam.value, examDate: date.value, minutes: Number(minutes.value) };
+        Object.assign(coach, { setup, plan: studyPlan(setup), answers: coach.answers ?? [], studyDays: coach.studyDays ?? [], review: coach.review ?? [], editing: false });
+        const left = Math.round((new Date(setup.examDate) - today) / DAY);
+        say(c.id, `試験まで${left}日、1日${setup.minutes}分の計画を作りました。最初は仕訳と勘定科目から。まずは小テストで今の実力を見せてください。`);
+        toast('学習計画を作りました'); render();
+      } }, '計画を作る'), coach.setup && h('button', { type: 'button', class: 'btn ghost', onclick: () => { coach.editing = false; render(); } }, 'やめる')));
+  }
+  const left = Math.round((new Date(coach.setup.examDate) - today) / DAY);
+  return [
+    h('div', { class: 'row', style: 'justify-content:space-between' },
+      h('p', { class: 'muted small' }, `${coach.setup.exam} ・ 試験日 ${coach.setup.examDate.replaceAll('-', '/')}（あと${left}日） ・ 1日${coach.setup.minutes}分`),
+      h('button', { type: 'button', class: 'btn ghost small', onclick: () => { coach.editing = true; render(); } }, '計画を立て直す')),
+    ...coach.plan.map((p) => {
+      const now = today >= p.start && today <= p.end;
+      return h('div', { class: 'card' },
+        h('div', { class: 'row', style: 'justify-content:space-between' }, h('h3', {}, p.name), now && h('span', { class: 'badge coach' }, 'いまここ')),
+        h('p', { class: 'meta' }, `${md(p.start)} 〜 ${md(p.end)}`),
+        h('p', {}, `中心：${p.focus}`),
+        h('p', { class: 'small muted' }, `毎日の目安：${p.task}`));
+    }),
+  ];
+}
+
+function newQuiz(coach) {
+  // 苦手な分野（正答率が低い順）と復習リストから優先して3問
+  const order = [...areaStats(coach)].sort((a, b) => a.rate - b.rate).map((x) => x.area);
+  const pool = [...coach.review.map((i) => QUESTIONS[i]), ...order.flatMap((a) => QUESTIONS.filter((q) => q.area === a))];
+  const picked = [...new Set(pool)].slice(0, 3);
+  return { items: picked.map((q) => ({ qi: QUESTIONS.indexOf(q), chosen: null })), done: false };
+}
+
+function tutorQuiz(c) {
+  const coach = state.coach[c.id];
+  if (!coach?.setup) return h('div', { class: 'empty' }, '先に「学習計画」タブで計画を作ってください。');
+  if (!state.quiz || state.quiz.cid !== c.id) state.quiz = { cid: c.id, ...newQuiz(coach) };
+  const quiz = state.quiz;
+  const answered = quiz.items.filter((x) => x.chosen != null).length;
+  const cards = quiz.items.map((item, n) => {
+    const q = QUESTIONS[item.qi];
+    return h('div', { class: 'card' },
+      h('div', { class: 'row', style: 'justify-content:space-between' }, h('span', { class: 'label' }, `第${n + 1}問 ・ ${q.area}`), coach.review.includes(item.qi) && h('span', { class: 'chip' }, '復習')),
+      h('p', {}, q.q),
+      h('div', { class: 'stack', style: 'gap:6px' }, q.options.map((o, oi) => {
+        let cls = 'option';
+        if (item.chosen != null && oi === q.answer) cls += ' correct';
+        else if (item.chosen === oi) cls += ' wrong';
+        return h('button', { type: 'button', class: cls, disabled: item.chosen != null, onclick: () => {
+          item.chosen = oi;
+          const ok = oi === q.answer;
+          coach.answers.push({ area: q.area, ok, date: new Date() });
+          coach.review = ok ? coach.review.filter((i) => i !== item.qi) : [...new Set([...coach.review, item.qi])];
+          if (!coach.studyDays.some((d) => d.getTime() === today.getTime())) coach.studyDays.push(new Date(today));
+          render();
+        } }, o);
+      })),
+      item.chosen != null && h('p', { class: 'explain' }, item.chosen === q.answer ? '正解！ ' : '惜しい。 ', q.explain));
+  });
+  const finish = answered === quiz.items.length && h('div', { class: 'row' },
+    h('button', { type: 'button', class: 'btn coach', onclick: () => {
+      const ok = quiz.items.filter((x) => x.chosen === QUESTIONS[x.qi].answer).length;
+      const wrongAreas = [...new Set(quiz.items.filter((x) => x.chosen !== QUESTIONS[x.qi].answer).map((x) => QUESTIONS[x.qi].area))];
+      say(c.id, `小テスト、${quiz.items.length}問中${ok}問正解でした。${wrongAreas.length ? `間違えた問題（${wrongAreas.join('・')}）は復習リストに入れたので、明日もう一度出しますね。` : '全問正解、すばらしいです！明日は少し難しい問題に進みましょう。'}`);
+      state.quiz = null; state.tab = 'chat'; render(); window.scrollTo(0, document.body.scrollHeight);
+    } }, `結果を${c.name}に報告する`),
+    h('button', { type: 'button', class: 'btn ghost', onclick: () => { state.quiz = null; render(); } }, '別の3問'));
+  return [h('p', { class: 'small muted' }, `苦手な分野と復習リストから優先して出題しています（${answered}/${quiz.items.length}問回答）。`), ...cards, finish];
+}
+
+function tutorProgress(c) {
+  const coach = state.coach[c.id];
+  if (!coach?.setup) return h('div', { class: 'empty' }, '小テストを解くと、ここに進捗が表示されます。');
+  const stats = areaStats(coach);
+  const total = coach.answers.length;
+  const rate = total ? Math.round((coach.answers.filter((a) => a.ok).length / total) * 100) : 0;
+  let streak = 0;
+  for (let d = 0; d < 60; d++) {
+    const day = daysAgo(d).getTime();
+    if (coach.studyDays.some((x) => x.getTime() === day)) streak++;
+    else if (d > 0) break;
+  }
+  const left = Math.round((new Date(coach.setup.examDate) - today) / DAY);
+  return [
+    coach.answers.some((a) => a.example) && h('p', { class: 'small muted' }, h('span', { class: 'example' }, '例'), ' 使い始めて2週間の状態を例として入れています。小テストを解くと反映されます。'),
+    h('div', { class: 'stats' },
+      h('div', { class: 'stat' }, h('span', { class: 'label' }, '試験まで'), h('span', { class: 'stat-value' }, `${left}日`)),
+      h('div', { class: 'stat' }, h('span', { class: 'label' }, '全体の正答率'), h('span', { class: 'stat-value' }, `${rate}%`)),
+      h('div', { class: 'stat' }, h('span', { class: 'label' }, '連続学習'), h('span', { class: 'stat-value' }, `${streak}日`))),
+    h('div', { class: 'card' }, h('h3', {}, '分野別の正答率'),
+      stats.map((st) => h('div', { class: 'area-bar' },
+        h('span', {}, st.area),
+        h('div', { class: 'meter-bar' }, h('div', { class: 'meter-fill coach', style: `width:${Math.round(st.rate * 100)}%` })),
+        h('span', { class: 'meta', style: 'text-align:right' }, `${Math.round(st.rate * 100)}%`))),
+      h('p', { class: 'small muted' }, `いちばん伸ばしたいのは「${[...stats].sort((a, b) => a.rate - b.rate)[0].area}」です。`)),
+    h('div', { class: 'card' }, h('h3', {}, `復習リスト（${coach.review.length}問）`),
+      coach.review.length
+        ? h('ul', { style: 'margin:0;padding-left:1.2em' }, coach.review.map((i) => h('li', {}, `${QUESTIONS[i].area}：${QUESTIONS[i].q}`)))
+        : h('p', { class: 'muted small' }, '間違えた問題はありません。')),
+  ];
+}
+
+// =====================================================================
+// 画面：つくる
+// =====================================================================
+function createView() {
+  const f = {
+    persona: h('select', { id: 'f-persona' }, Object.entries(PERSONAS).map(([k, p]) => h('option', { value: k }, p.label))),
+    role: h('textarea', { id: 'f-role', maxlength: 400, placeholder: '例：旅行プランナー。予算と日数を聞いて、移動時間まで考えた行程を一緒に作る' }),
+    name: h('input', { id: 'f-name', maxlength: 50, placeholder: '実際に話すキャラの名前' }),
+    tagline: h('input', { id: 'f-tagline', maxlength: 200, placeholder: '例：鬼軍曹だけど記録だけは褒めてくれる、朝トレ専門のトレーナー' }),
+    profile: h('textarea', { id: 'f-profile', placeholder: '年齢、口調、一人称、性格、ユーザとの距離感' }),
+    opening: h('textarea', { id: 'f-opening', placeholder: '最初のひとこと' }),
+    tags: h('input', { id: 'f-tags', placeholder: 'カンマ区切り（例：筋トレ, 朝活）' }),
+    visibility: h('select', { id: 'f-vis' }, h('option', { value: 'public' }, '公開'), h('option', { value: 'unlisted' }, '限定公開（URLを知る人だけ）'), h('option', { value: 'private' }, '非公開')),
+  };
+  const labels = { persona: '基本ペルソナ（役割）', role: '役割の説明（その他を選んだとき）', name: 'キャラ名', tagline: '紹介文', profile: 'プロフィール（性格・口調）', opening: '最初のひとこと', tags: 'タグ', visibility: '公開範囲' };
+  const help = h('p', { class: 'small muted' });
+  const updateHelp = () => {
+    help.textContent = {
+      chat: '会話を楽しむキャラです。舞台や関係性をプロフィールに書きます。',
+      trainer: 'メニュー作り・記録・進捗グラフの機能が付きます。あなたが決めるのは性格と口調だけ。厳しめ、褒め上手など、好みのトレーナーを作れます。',
+      tutor: '学習計画・小テスト・苦手分析の機能が付きます。あなたが決めるのは先生の性格と教え方の雰囲気です。',
+      secretary: '予定・タスクの登録、毎朝のブリーフィング、メモ要約の機能が付きます。執事風、ギャル秘書など、話し方は自由です。',
+      partner: '会話から好きなものや予定を覚える機能と、朝夜のメッセージが付きます。彼女・彼氏・推し風など、関係性はプロフィールに書きます。',
+      language: '場面練習・添削・単語帳の機能が付きます。出身地や話し方の個性を決めてください（デモは英語のみ）。',
+      interpreter: '話した言語を判別して通訳し、相手の言語の声で読み上げます。訳し方の好み（丁寧に、意訳寄りに など）はプロフィールや調整で指定できます。',
+      other: '一覧にない役割を自由に作れます。下の「役割の説明」に、何を手伝うキャラなのかを書いてください（例：旅行プランナー、料理の先生、占い師）。',
+    }[f.persona.value];
+    roleField.hidden = f.persona.value !== 'other';
+  };
+  let roleField;
+  f.persona.addEventListener('change', updateHelp);
+  const save = () => {
+    if (!f.name.value.trim()) { toast('キャラ名を入力してください'); f.name.focus(); return; }
+    const persona = f.persona.value;
+    if (persona === 'other' && !f.role.value.trim()) { toast('役割の説明を入力してください'); f.role.focus(); return; }
+    const c = {
+      id: 1000 + state.myCharacters.length, persona, name: f.name.value.trim(), tagline: f.tagline.value.trim() || '（紹介文なし）',
+      profile: f.profile.value.trim(), opening: f.opening.value.trim(), role: persona === 'other' ? f.role.value.trim() : '',
+      tags: f.tags.value.split(/[,、]/).map((x) => x.trim()).filter(Boolean), creator: 'あなた', chats: 0,
+      visibility: f.visibility.value, color: PERSONA_COLOR[persona] ?? COLORS[(state.myCharacters.length + 4) % COLORS.length],
+    };
+    state.myCharacters.unshift(c);
+    toast(`「${c.name}」を保存しました`);
+    go('creator');
+  };
+  return [
+    h('div', { class: 'stack' }, h('button', { type: 'button', class: 'linkish', style: 'justify-self:start', onclick: () => go('creator') }, '← クリエイター'),
+      h('h1', {}, 'キャラをつくる'),
+      h('p', { class: 'muted' }, '役割（基本ペルソナ）を選ぶと、その役割に必要な機能が自動で付きます。キャラの個性は自由に決められます。')),
+    h('div', { class: 'stack' }, Object.entries(f).map(([k, el]) => {
+      const field = h('label', { class: 'stack', style: 'gap:4px' }, h('span', { class: 'label' }, labels[k]), el, k === 'persona' && help);
+      if (k === 'role') { roleField = field; updateHelp(); }
+      return field;
+    })),
+    h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', onclick: save }, '保存する')),
+  ];
+}
+
+// =====================================================================
+// 画面：プラン／設定
+// =====================================================================
+function billingView() {
+  const plans = Object.entries(PLANS).map(([key, p]) => h('div', { class: state.plan === key ? 'plan current' : 'plan' },
+    state.plan === key && h('span', { class: 'badge' }, '利用中'),
+    h('h2', {}, p.name),
+    h('div', { class: 'price' }, p.month ? `月額 ${yen(p.month)}` : '無料'),
+    p.year && h('div', { class: 'meta' }, `年額 ${yen(p.year)}`),
+    h('div', {}, `会話 ${p.msgs.toLocaleString()}回／${p.per}`),
+    p.bonus > 0 && h('div', {}, `毎月 ${p.bonus}pt 付与`),
+    state.plan !== key && h('button', { type: 'button', class: key === 'free' ? 'btn ghost' : 'btn', onclick: () => {
+      state.plan = key; state.used = 0;
+      if (p.bonus) state.points.free += p.bonus;
+      toast(key === 'free' ? '無料プランに戻しました' : `${p.name}プランに切り替えました（デモ：決済なし）。特典 ${p.bonus}pt を付与`);
+      render();
+    } }, key === 'free' ? '無料に戻す' : '加入する')));
+  const packs = PACKS.map(([price, pts]) => h('div', { class: 'plan' },
+    h('div', { class: 'price' }, `${pts.toLocaleString()}pt`),
+    h('div', { class: 'meta' }, `${yen(price)}${pts > price ? `（+${pts - price}pt お得）` : ''}`),
+    h('button', { type: 'button', class: 'btn', onclick: () => { state.points.paid += pts; toast(`${pts.toLocaleString()}pt を追加しました（デモ：決済なし）`); render(); } }, '購入')));
+  return [
+    h('h1', {}, 'プランとポイント'),
+    usagePanel(),
+    h('div', { class: 'stack' }, h('h2', {}, 'サブスクリプション'), h('div', { class: 'plans' }, plans)),
+    h('div', { class: 'stack' }, h('h2', {}, 'ポイント'),
+      h('p', { class: 'muted' }, `プラン枠を超えた会話は1回 ${COST_PER_MSG}pt。無償ポイント（特典）から先に使います。有償ポイントに期限はありません。`),
+      h('div', { class: 'plans' }, packs)),
+    h('p', { class: 'muted' }, '本番の決済は決済代行サービスの画面で行います（使える支払い方法は契約内容によります）。'),
+  ];
+}
+
+const isCompanion = (c) => state.companions.includes(c.id);
+const officials = () => characters.filter((c) => c.creator === 'AIボウ公式');
+function talkWith(ids) {
+  for (const id of ids) if (!state.companions.includes(id)) state.companions.push(id);
+  state.onboarded = true;
+  state.talk.members = ids.slice(0, 4);
+  go('talk');
+}
+
+// 相棒ごとの「いまの状態」をひとことで
+function statusLine(c) {
+  const co = state.coach[c.id];
+  if (!co || needsSetup(c)) return c.tagline;
+  return ({
+    trainer: () => `今週 ${co.logs.filter((l) => l.date >= weekStart(today)).length}/${co.setup.days}回 ・ 次は「${co.menu[co.next].name}」`,
+    tutor: () => `試験まで ${Math.round((new Date(co.setup.examDate) - today) / DAY)}日 ・ 復習 ${co.review.length}問`,
+    secretary: () => `今日の予定 ${co.events.filter((e) => sameDay(e.date, today)).length}件 ・ 未完了タスク ${co.tasks.filter((t) => !t.done).length}件`,
+    partner: () => `${co.since ? `付き合って ${Math.round((today - co.since) / DAY)}日 ・ ` : ''}覚えたこと ${co.memories.length}件`,
+    language: () => `シーン達成 ${Object.values(co.completed).filter(Boolean).length}/${Object.keys(SCENES).length} ・ 今日の復習 ${co.cards.filter((x) => x.due <= today).length}枚`,
+    interpreter: () => '日本語⇄英語・中国語・韓国語',
+  }[c.persona] ?? (() => c.tagline))();
+}
+
+// 相棒を選んだときに届く、最初のメッセージ
+function welcomeMessages() {
+  const now = new Date();
+  const msgs = [];
+  for (const id of state.companions) {
+    const c = findChara(id);
+    const co = ensureCoach(c);
+    const text = {
+      secretary: () => `おはようございます。${briefing(co)}`,
+      partner: () => partnerMorning(c),
+      trainer: () => `よっ。今日は「${co.menu?.[co.next]?.name ?? '全身'}」の日だ。目標の重さは「今日の記録」に入れておいたぞ。`,
+      tutor: () => `今日の小テストは、まだ正答率が低い「決算整理」を多めに出しますね。10分だけでも大丈夫です。`,
+      language: () => "Good morning! Ready for a quick café practice today? (今日もカフェの練習、少しだけやってみる？)",
+    }[c.persona];
+    if (text) msgs.push({ cid: id, text: text(), read: false, time: now });
+  }
+  return msgs;
+}
+
+// ---- ホーム ----
+function homeView() {
+  if (!state.onboarded) return onboardingView();
+  const companions = state.companions.map(findChara).filter(Boolean);
+  if (!companions.length) {
+    return [h('h1', {}, 'ホーム'), h('div', { class: 'empty' }, '相棒がいません。', h('br'), h('button', { type: 'button', class: 'btn', onclick: () => go('discover') }, '相棒をさがす'))];
+  }
+  const hour = new Date().getHours();
+  const greet = hour < 5 ? 'こんばんは' : hour < 11 ? 'おはようございます' : hour < 18 ? 'こんにちは' : 'こんばんは';
+  const talkable = companions.filter((c) => c.persona !== 'interpreter');
+  const sec = companions.find((c) => c.persona === 'secretary');
+  const secCo = sec && state.coach[sec.id];
+  const upcoming = secCo ? [
+    ...secCo.events.filter((e) => e.date >= today && e.date <= addDays(1)).sort((a, b) => (a.date - b.date) || a.time.localeCompare(b.time))
+      .map((e) => ({ when: `${dayLabel(e.date)} ${e.time}`, text: e.title })),
+    ...secCo.tasks.filter((t) => !t.done && t.due && t.due <= addDays(1)).map((t) => ({ when: `${dayLabel(t.due)}まで`, text: `タスク：${t.title}` })),
+  ] : [];
+  const latest = state.inbox.slice(0, 3);
+  return [
+    h('section', { class: 'greeting' },
+      h('p', { class: 'muted' }, `${md(today)}（${WD[today.getDay()]}）`),
+      h('h1', {}, greet),
+      h('div', { class: 'row' },
+        talkable[0] && h('button', { type: 'button', class: 'btn', onclick: () => talkWith([talkable[0].id]) }, `${talkable[0].name}に話しかける`),
+        talkable.length > 1 && h('button', { type: 'button', class: 'btn ghost', onclick: () => talkWith(talkable.slice(0, 4).map((c) => c.id)) }, 'みんなで話す'))),
+    latest.length > 0 && h('section', { class: 'panel' },
+      h('div', { class: 'panel-head' }, h('h2', {}, '届いたメッセージ'), h('button', { type: 'button', class: 'linkish', onclick: () => go('inbox') }, 'すべて見る')),
+      latest.map((m) => h('button', { type: 'button', class: m.read ? 'message' : 'message unread', onclick: () => go('inbox') },
+        h('div', { class: 'who' }, avatar(findChara(m.cid), 20), findChara(m.cid).name), richText(m.text)))),
+    h('section', { class: 'panel' },
+      h('div', { class: 'panel-head' }, h('h2', {}, '今日と明日'), h('button', { type: 'button', class: 'linkish', onclick: () => go('notes') }, 'ノートを見る')),
+      upcoming.length
+        ? h('div', { class: 'list' }, upcoming.map((u) => h('div', { class: 'item' }, h('span', { class: 'when' }, u.when), h('span', { class: 'grow' }, u.text))))
+        : h('p', { class: 'muted small' }, sec ? '予定やタスクはありません。' : '秘書を相棒にすると、予定やタスクがここに並びます。')),
+    h('div', { class: 'panel-head' }, h('h2', {}, 'わたしの相棒'), h('button', { type: 'button', class: 'linkish', onclick: () => go('discover') }, '相棒をさがす')),
+    h('div', { class: 'grid' }, companions.map((c) => h('div', { class: 'companion' },
+      h('button', { type: 'button', class: 'chara-head linkish', style: 'text-decoration:none;color:inherit;text-align:left', onclick: () => go('chara', c.id) },
+        avatar(c), h('div', {}, h('div', { class: 'chara-name' }, c.name), h('div', { class: 'meta' }, PERSONAS[c.persona].label))),
+      h('p', { class: 'status-text' }, statusLine(c)),
+      h('div', { class: 'row' },
+        h('button', { type: 'button', class: 'btn coach small', onclick: () => talkWith([c.id]) }, c.persona === 'interpreter' ? '通訳' : '声で話す'),
+        hasTools(c) && h('button', { type: 'button', class: 'btn ghost small', onclick: () => {
+          ensureCoach(c);
+          go('chat', c.id, needsSetup(c) ? 'plan' : ({ trainer: 'progress', tutor: 'progress', secretary: 'today', partner: 'memories', language: 'progress' }[c.persona] ?? 'chat'));
+        } }, '記録を見る'))))),
+    usagePanel(),
+  ];
+}
+
+// ---- はじめての人：公式の相棒を選ぶ ----
+function onboardingView() {
+  const list = officials();
+  return [
+    h('section', { class: 'greeting' },
+      h('h1', {}, '話せる相手が、毎日の味方になる'),
+      h('p', { class: 'muted' }, '声で話しかけるだけ。予定を覚えておく秘書、記録を見てくれるトレーナー、試験まで伴走する先生、あなたを覚えている恋人。まずは相棒を選びましょう（あとから何人でも増やせます）。')),
+    h('div', { class: 'features' },
+      h('div', {}, h('b', {}, '声で、そのまま話せる'), '話している途中で話しかけても、止まって聞いてくれます。'),
+      h('div', {}, h('b', {}, '覚えていてくれる'), '好きなもの、予定、記録。話すほど、あなたに合ってきます。'),
+      h('div', {}, h('b', {}, 'むこうから声をかけてくれる'), '朝の段取り、予定の前のお知らせ、おやすみのひとこと。'),
+      h('div', {}, h('b', {}, 'みんなで話せる'), '名前を呼べば、その相棒が答えます。')),
+    h('div', { class: 'grid' }, list.map((c) => h('button', {
+      type: 'button', class: 'pick', 'aria-pressed': state.picked.has(c.id) ? 'true' : 'false',
+      onclick: () => { state.picked.has(c.id) ? state.picked.delete(c.id) : state.picked.add(c.id); render(); },
+    }, state.picked.has(c.id) && h('span', { class: 'check' }, '選択中'),
+    h('div', { class: 'chara-head' }, avatar(c), h('div', {}, h('div', { class: 'chara-name' }, c.name), h('div', { class: 'meta' }, PERSONAS[c.persona].label))),
+    h('p', { class: 'small' }, c.tagline)))),
+    h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', onclick: () => {
+      if (!state.picked.size) { toast('1人以上選んでください'); return; }
+      state.companions = [...state.picked];
+      state.onboarded = true;
+      state.inbox = welcomeMessages();
+      toast('相棒が決まりました。さっそくメッセージが届いています');
+      go('home');
+    } }, `この${state.picked.size}人ではじめる`)),
+  ];
+}
+
+// ---- トーク ----
+function talkView() {
+  if (!state.talk.members.length) state.talk.members = state.companions.filter((id) => findChara(id).persona !== 'interpreter').slice(0, 1);
+  return [h('h1', {}, 'トーク'), talkPanel()];
+}
+
+// ---- ノート：相棒が覚えたこと・記録したこと ----
+function notesView() {
+  const companions = state.companions.map(findChara).filter(Boolean);
+  const byPersona = (p) => companions.find((c) => c.persona === p);
+  const sec = byPersona('secretary'), mio = byPersona('partner'), kai = byPersona('trainer'), emma = byPersona('language'), yui = byPersona('tutor');
+  const sections = [];
+  if (sec) {
+    const co = ensureCoach(sec);
+    sections.push(h('section', { class: 'panel' }, h('h2', {}, `予定とタスク（${sec.name}）`),
+      h('div', { class: 'list' },
+        [...co.events].sort((a, b) => (a.date - b.date) || a.time.localeCompare(b.time)).filter((e) => e.date >= today).map((e) => h('div', { class: 'item' }, h('span', { class: 'when' }, `${dayLabel(e.date)} ${e.time}`), h('span', { class: 'grow' }, e.title))),
+        co.tasks.filter((t) => !t.done).map((t) => h('label', { class: 'item' }, h('input', { type: 'checkbox', onchange: () => { t.done = true; toast(`完了：${t.title}`); render(); } }), h('span', { class: 'grow' }, t.title), h('span', { class: 'meta' }, t.due ? `${dayLabel(t.due)}まで` : ''))))));
+  }
+  if (mio) {
+    const co = ensureCoach(mio);
+    sections.push(h('section', { class: 'panel' }, h('h2', {}, `覚えていること（${mio.name}）`),
+      co.memories.length ? h('div', { class: 'list' }, co.memories.map((m) => h('div', { class: 'item' }, h('span', { class: 'chip' }, m.kind), h('span', { class: 'grow' }, m.text),
+        h('button', { type: 'button', class: 'mini', onclick: () => { co.memories = co.memories.filter((x) => x.id !== m.id); toast(`「${m.text}」を忘れました`); render(); } }, '忘れてもらう'))))
+        : h('p', { class: 'muted small' }, 'まだありません。')));
+  }
+  if (kai) {
+    const co = state.coach[kai.id];
+    sections.push(h('section', { class: 'panel' }, h('h2', {}, `トレーニング（${kai.name}）`),
+      co?.logs?.length ? h('div', { class: 'list' }, [...co.logs].reverse().slice(0, 5).map((l) => h('div', { class: 'item' }, h('span', { class: 'when' }, md(l.date)), h('span', { class: 'grow' }, `${l.day}：${l.items.filter((x) => x.weight != null).map((x) => `${x.ex} ${x.weight}kg`).join('、') || '自重'}`))))
+        : h('p', { class: 'muted small' }, 'まだ記録がありません。')));
+  }
+  if (yui) {
+    const co = state.coach[yui.id];
+    if (co?.setup) sections.push(h('section', { class: 'panel' }, h('h2', {}, `小テスト（${yui.name}）`),
+      areaStats(co).map((st) => h('div', { class: 'area-bar' }, h('span', {}, st.area), h('div', { class: 'meter-bar' }, h('div', { class: 'meter-fill coach', style: `width:${Math.round(st.rate * 100)}%` })), h('span', { class: 'meta', style: 'text-align:right' }, `${Math.round(st.rate * 100)}%`)))));
+  }
+  if (emma) {
+    const co = ensureCoach(emma);
+    sections.push(h('section', { class: 'panel' }, h('h2', {}, `単語カード（${emma.name}）`),
+      h('div', { class: 'list' }, co.cards.map((x) => h('div', { class: 'item' }, h('span', { class: 'grow' }, x.en), h('span', { class: 'small muted' }, x.ja))))));
+  }
+  return [h('h1', {}, 'ノート'), h('p', { class: 'muted' }, '相棒が会話の中で覚えたこと・記録したことです。消したものは、相棒も忘れます。'),
+    sections.length ? sections : h('div', { class: 'empty' }, '相棒と話すと、ここに記録がたまっていきます。')];
+}
+
+// ---- お知らせ ----
+function inboxView() {
+  const msgs = state.inbox;
+  setTimeout(() => { if (msgs.some((m) => !m.read)) { msgs.forEach((m) => { m.read = true; }); renderNav(); } }, 800);
+  return [
+    h('h1', {}, 'お知らせ'),
+    h('p', { class: 'small muted' }, '相棒からの朝・夜のメッセージと、予定の30分前のお知らせが届きます。本番ではスマホの通知でも届きます。'),
+    msgs.length ? h('div', { class: 'stack' }, msgs.map((m) => {
+      const c = findChara(m.cid);
+      return h('div', { class: m.read ? 'message' : 'message unread' },
+        h('div', { class: 'who' }, avatar(c, 20), c.name), richText(m.text),
+        h('div', { class: 'bubble-tools' },
+          h('button', { type: 'button', class: 'mini', onclick: () => speak(m.text, c.persona === 'language' ? 'en-US' : 'ja-JP', voiceOf(c)) }, '読み上げ'),
+          c.persona !== 'interpreter' && h('button', { type: 'button', class: 'mini', onclick: () => talkWith([c.id]) }, '声で返事する')));
+    })) : h('div', { class: 'empty' }, 'まだお知らせはありません。'),
+  ];
+}
+
+// ---- 設定 ----
+function settingsView() {
+  const companions = state.companions.map(findChara).filter(Boolean);
+  return [
+    h('h1', {}, '設定'),
+    h('section', { class: 'panel' }, h('h2', {}, 'プランとポイント'), usagePanel(),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', onclick: () => go('billing') }, 'プラン・ポイントを見る'))),
+    h('section', { class: 'panel' }, h('h2', {}, 'わたしの相棒'),
+      companions.length ? h('div', { class: 'list' }, companions.map((c) => h('div', { class: 'item' }, avatar(c, 28), h('span', { class: 'grow' }, c.name, h('span', { class: 'meta' }, `　${PERSONAS[c.persona].label}`)),
+        h('button', { type: 'button', class: 'mini', onclick: () => { state.companions = state.companions.filter((x) => x !== c.id); toast(`${c.name}を相棒から外しました`); render(); } }, '相棒から外す'))))
+        : h('p', { class: 'muted small' }, 'まだいません。'),
+      h('p', { class: 'small muted' }, '外しても、会話や覚えていることは残ります。'),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'linkish', onclick: () => go('discover') }, '相棒をさがす'))),
+    h('section', { class: 'panel' }, h('h2', {}, 'アカウント'),
+      h('p', { class: 'small muted' }, '生年月日（18歳以上が対象の相棒を使うとき）、通知、ログアウトなど。デモでは表示のみです。')),
+    h('section', { class: 'panel', style: 'background:transparent' }, h('h2', {}, 'クリエイターの方へ'),
+      h('p', { class: 'small muted' }, '自分でキャラをつくって公開し、話された分に応じて報酬を受け取れます（準備中の機能を含みます）。'),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'linkish', onclick: () => go('creator') }, 'クリエイター画面へ'))),
+  ];
+}
+
+// ---- クリエイター ----
+function creatorView() {
+  const r = state.rewards;
+  return [
+    h('button', { type: 'button', class: 'linkish', style: 'justify-self:start', onclick: () => go('settings') }, '← 設定'),
+    h('h1', {}, 'クリエイター'),
+    h('p', { class: 'small muted' }, 'クリエイター向けの機能は準備中です。いまはキャラの作成と、報酬の確認ができます。'),
+    h('div', { class: 'panel-head' }, h('h2', {}, 'つくったキャラ'), h('button', { type: 'button', class: 'btn', onclick: () => go('create') }, 'キャラをつくる')),
+    state.myCharacters.length ? h('div', { class: 'grid' }, state.myCharacters.map(charaCard)) : h('div', { class: 'empty' }, 'まだありません。'),
+    h('div', { class: 'stack' }, h('h2', {}, '報酬'),
+      h('p', { class: 'muted small' }, `あなたのキャラで他の人が有償ポイントを使うと、その ${REWARD_SHARE * 100}% が報酬（R）になります。30日の保留期間のあと、1,000R から出金できます。`),
+      h('div', { class: 'table-wrap' }, h('table', {},
+        h('tbody', {},
+          h('tr', {}, h('th', {}, '出金できる'), h('td', { class: 'num' }, `${r.available.toLocaleString()} R`)),
+          h('tr', {}, h('th', {}, '保留中（30日以内の売上）'), h('td', { class: 'num' }, `${r.pending.toLocaleString()} R`)),
+          h('tr', {}, h('th', {}, '申請済み'), h('td', { class: 'num' }, `${r.requested.toLocaleString()} R`))))),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', disabled: r.available < 1000, onclick: () => {
+        r.requested += r.available; toast(`${r.available.toLocaleString()}R の出金を申請しました（デモ）`); r.available = 0; render();
+      } }, '出金を申請'), h('span', { class: 'muted small' }, '数値はデモ用の例です'))),
+  ];
+}
+
+function render() {
+  renderNav();
+  const views = {
+    home: homeView, discover: discoverView, talk: talkView, notes: notesView, inbox: inboxView, settings: settingsView,
+    creator: creatorView, create: createView, billing: billingView, chara: () => charaView(state.param), chat: () => chatView(state.param),
+  };
+  document.getElementById('view').replaceChildren(...[views[state.view]()].flat(Infinity).filter((x) => x != null && x !== false));
+}
+render();
+</script>
