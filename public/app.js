@@ -46,11 +46,11 @@ async function refreshMe() {
   const here = location.hash.split('?')[0] || '#/';
   const link = (href, label) => h('a', { href, 'aria-current': here === href ? 'page' : false }, label);
   if (!me.user) {
-    put(nav, link('#/discover', 'さがす'));
-    put(acc, h('a', { class: 'button small', href: '#/login' }, 'はじめる'));
+    put(nav, link('#/discover', 'さがす'), link('#/login', 'ログイン'));
+    put(acc, h('a', { class: 'button small', href: '#/make' }, '無料ではじめる'));
     return;
   }
-  put(nav, link('#/', 'ホーム'), link('#/discover', 'さがす'), link('#/talk', 'トーク'), link('#/notes', 'ノート'), link('#/settings', '設定'));
+  put(nav, link('#/', 'マイページ'), link('#/discover', 'さがす'), link('#/talk', 'トーク'), link('#/notes', 'ノート'), link('#/settings', '設定'));
   const inbox = await api('/api/inbox').catch(() => ({ unread: 0 }));
   put(acc, h('a', { href: '#/inbox', 'aria-label': `お知らせ ${inbox.unread}件` }, 'お知らせ', inbox.unread ? h('span', { class: 'badge' }, String(inbox.unread)) : null));
 }
@@ -112,21 +112,126 @@ async function discoverPage(params) {
 
 // ---- 画面：はじめての人（ログイン前） ----
 
+// 登録前につくった相棒の下書き。登録画面へ渡し、送信時にサーバへ預ける（メールを別の端末で開いても引き継げる）。
+const DRAFT_KEY = 'aibow:draft';
+let draftMemo = null;
+function loadDraft() {
+  if (!draftMemo) { try { draftMemo = JSON.parse(sessionStorage.getItem(DRAFT_KEY)); } catch { draftMemo = null; } }
+  return draftMemo;
+}
+function saveDraft(d) { draftMemo = d; try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* 保存できなくてもメモリに残る */ } }
+function clearDraft() { draftMemo = null; try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* なにもしない */ } }
+
+// 読み上げ。ログイン前はお試し用（回数制限あり）、ログイン後は通常の声（枠・ポイントを使う）。失敗したらエラー文を返す。
+async function playSpeech({ voice, speed = 1, text }) {
+  const res = await fetch(me?.user ? '/api/voice/preview' : '/api/demo/speech', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voice, speed, text }),
+  });
+  if (!res.ok) return (await res.json().catch(() => ({}))).error ?? '再生できませんでした';
+  try { await new Audio(URL.createObjectURL(await res.blob())).play(); } catch { return '再生できませんでした'; }
+  return null;
+}
+
+// ---- 画面：メインページ（ログイン前） ----
+
 async function landingPage() {
-  const { characters } = await api('/api/characters?sort=popular');
-  const official = characters.filter((c) => c.official);
+  const demo = await api('/api/demo');
+  const demoBox = demo.characters.length ? demoPanel(demo) : null;
+  const step = (n, title, text) => h('li', {}, h('span', { class: 'step-no' }, String(n)), h('div', {}, h('b', {}, title), h('p', {}, text)));
   return [
     h('section', { class: 'hero' },
-      h('h1', {}, '話せる相手が、毎日の味方になる'),
-      h('p', {}, '声で話しかけるだけ。予定を覚えておく秘書、記録を見てくれるトレーナー、試験まで伴走する先生、あなたを覚えている恋人。何人とでも、同時に話せます。'),
-      h('div', { class: 'row' }, h('a', { class: 'button big', href: '#/login' }, '無料ではじめる'), h('a', { class: 'button secondary', href: '#/discover' }, '相棒を見てみる'))),
+      h('p', { class: 'eyebrow' }, '声で話せる、AIの相棒'),
+      h('h1', {}, 'あなただけの相棒が、', h('br'), '毎日の味方になる'),
+      h('p', {}, '勉強を見てくれる先生、予定を預かる執事、記録を見てくれるトレーナー。役割を選んで、名前と性格と声を決めるだけで、あなただけの相棒ができます。声でも文字でも話せて、話したことを覚えていて、むこうから声もかけてくれます。'),
+      h('div', { class: 'row' },
+        h('a', { class: 'button big', href: '#/make' }, '自分だけの相棒をつくる'),
+        demoBox && h('button', { class: 'secondary', onclick: () => document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' }) }, 'まずは話してみる')),
+      h('p', { class: 'muted small' }, '無料ではじめられます。登録で50ptプレゼント。')),
+    demoBox && h('section', { id: 'demo', class: 'panel demo' },
+      h('h2', {}, 'まずは話してみる（登録なし）'),
+      h('p', { class: 'muted' }, 'AIボウの標準の相棒です。下のボタンを押すか、自由に話しかけてみてください。'),
+      demoBox),
+    h('h2', {}, 'AIボウでできること'),
     h('div', { class: 'features' },
-      h('div', {}, h('h3', {}, '声で、そのまま話せる'), h('p', {}, '話している途中で話しかけても、ちゃんと止まって聞いてくれます。')),
-      h('div', {}, h('h3', {}, '覚えていてくれる'), h('p', {}, '好きなもの、予定、トレーニングの記録。話すほど、あなたに合ってきます。')),
+      h('div', {}, h('h3', {}, '声で、そのまま話せる'), h('p', {}, '話している途中で話しかけても、ちゃんと止まって聞いてくれます。文字でも話せます。')),
+      h('div', {}, h('h3', {}, '本当に役に立つ'), h('p', {}, '秘書は予定を登録し、先生は苦手を記録し、トレーナーは自己ベストを覚えます。')),
       h('div', {}, h('h3', {}, 'むこうから声をかけてくれる'), h('p', {}, '朝の段取り、予定の30分前、おやすみのひとこと。')),
-      h('div', {}, h('h3', {}, 'みんなで話せる'), h('p', {}, '秘書とトレーナーに同時に相談。名前を呼べば、その人が答えます。'))),
-    official.length > 0 && [h('h2', {}, '公式の相棒'), h('div', { class: 'grid' }, official.map(characterCard))],
+      h('div', {}, h('h3', {}, 'みんなで話せる'), h('p', {}, '執事と先生に同時に相談。名前を呼べば、その相棒が答えます。'))),
+    h('h2', {}, 'はじめかた'),
+    h('ol', { class: 'steps' },
+      step(1, '役割を選ぶ', '先生・秘書・トレーナー・恋人・語学パートナーなど。役割に合った道具が自動で付きます。'),
+      step(2, '名前・性格・声を決める', '候補から選ぶだけでも、自由に書いても。「おまかせ」で性格の文章も書けます。'),
+      step(3, '登録して、マイページで毎日使う', 'メールアドレスだけで登録できます。相棒はマイページで待っています。')),
+    h('h2', {}, 'どの相棒をつくる？'),
+    h('div', { class: 'grid roles' }, Object.entries(MAKE_ROLES).map(([k, [label, desc]]) => h('a', { class: 'card role-card', href: `#/make?persona=${k}` },
+      h('h3', {}, label), h('p', { class: 'muted' }, desc), h('span', { class: 'link' }, 'この役割でつくる →')))),
+    h('section', { class: 'panel cta' },
+      h('h2', {}, '無料プランでも、毎日使えます'),
+      h('p', { class: 'muted' }, '文字の会話は1日10回、声の会話は1日3分まで無料。もっと話したくなったら、月額プランやポイントで。'),
+      h('a', { class: 'button big', href: '#/make' }, '自分だけの相棒をつくる')),
   ];
+}
+
+// メインページのお試し会話。キャラごとに会話を保ち、切り替えても続きから話せる。
+function demoPanel({ characters, voiceAvailable }) {
+  const logs = new Map(characters.map((c) => [c.id, []]));
+  let current = characters[0];
+  let busy = false;
+  const tabs = h('div', { class: 'demo-tabs', role: 'tablist' });
+  const chat = h('div', { class: 'chat demo-chat' });
+  const chips = h('div', { class: 'chips' });
+  const notice = h('div');
+  const input = h('input', { placeholder: '話しかけてみる', maxlength: 300 });
+  const sendBtn = h('button', {}, '送信');
+
+  const bubble = (c, role, text) => h('div', { class: `bubble ${role}` }, text,
+    role === 'assistant' && voiceAvailable && h('button', { class: 'mini', onclick: async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      const err = await playSpeech({ voice: c.voice, speed: c.voice_speed, text });
+      if (err) put(notice, h('p', { class: 'muted small' }, err));
+      btn.disabled = false;
+    } }, '▶ 声で聞く'));
+  const render = () => {
+    put(tabs, characters.map((c) => h('button', { role: 'tab', class: 'demo-tab', 'aria-selected': c === current ? 'true' : 'false', onclick: () => { current = c; render(); } },
+      h('span', { class: `avatar p-${c.persona}` }, initial(c.name)), h('span', {}, h('b', {}, c.name), h('small', {}, personaLabel(c))))));
+    const log = logs.get(current.id);
+    put(chat, h('p', { class: 'muted small demo-tagline' }, current.tagline), bubble(current, 'assistant', current.opening),
+      log.map((m) => m.role === 'cta' ? m.node : bubble(current, m.role, m.content)));
+    put(chips, current.prompts.map((p) => h('button', { class: 'chip-btn', disabled: busy, onclick: () => send(p) }, p)));
+    sendBtn.disabled = busy;
+    chat.scrollTop = chat.scrollHeight;
+  };
+  const cta = () => h('div', { class: 'demo-cta' },
+    h('p', {}, `${current.name}みたいな相棒を、あなた好みにつくれます。登録すると、話したことを覚えて予定や記録も残せます。`),
+    h('a', { class: 'button', href: `#/make?persona=${current.persona}` }, `${personaLabel(current)}の相棒をつくる`));
+  const send = async (text) => {
+    text = text.trim();
+    if (!text || busy) return;
+    const c = current;
+    const log = logs.get(c.id);
+    log.push({ role: 'user', content: text });
+    busy = true;
+    input.value = '';
+    put(notice);
+    render();
+    try {
+      const r = await api('/api/demo/chat', { method: 'POST', body: { characterId: c.id, history: log.filter((m) => m.role !== 'cta') } });
+      log.push({ role: 'assistant', content: r.text });
+      if (log.filter((m) => m.role === 'user').length === 2) log.push({ role: 'cta', node: cta() });
+    } catch (err) {
+      log.pop();
+      if (err.status === 429) log.push({ role: 'cta', node: h('div', { class: 'demo-cta' }, h('p', {}, err.message), h('a', { class: 'button', href: '#/make' }, '自分だけの相棒をつくる')) });
+      else put(notice, h('p', { class: 'error' }, err.message));
+    } finally {
+      busy = false;
+      render();
+    }
+  };
+  sendBtn.addEventListener('click', () => send(input.value));
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) send(input.value); });
+  render();
+  return h('div', { class: 'demo-box' }, tabs, chat, chips, h('div', { class: 'composer' }, input, sendBtn), notice);
 }
 
 // ---- 画面：ホーム（わたしの相棒） ----
@@ -142,10 +247,13 @@ const whenLabel = (dueAt) => {
   return `${label} ${d.toISOString().slice(11, 16)}`;
 };
 
-async function homePage() {
+async function homePage(params) {
   if (!me.user) return landingPage();
   const home = await api('/api/home');
   if (!home.companions.length) return onboardingPage();
+  const welcomeId = Number(params.get('welcome'));
+  const made = welcomeId ? home.companions.find((c) => c.id === welcomeId) : null;
+  if (welcomeId) { clearDraft(); history.replaceState(null, '', '#/'); }
   const greet = (() => {
     const hour = jstDate().getUTCHours();
     return hour < 5 ? 'こんばんは' : hour < 11 ? 'おはようございます' : hour < 18 ? 'こんにちは' : 'こんばんは';
@@ -163,10 +271,23 @@ async function homePage() {
     }
   };
   const talkable = companions.filter((c) => c.persona !== 'interpreter');
+  const welcome = made && h('section', { class: 'panel welcome' },
+    h('div', { class: 'card-head' }, h('span', { class: `avatar big p-${made.persona}` }, initial(made.name)),
+      h('div', {}, h('h1', {}, `ようこそ${me.user.nickname ? `、${me.user.nickname}さん` : ''}！`),
+        h('p', { class: 'muted' }, `${made.name}（${personaLabel(made)}）があなたを待っていました。さっそく話しかけてみましょう。`))),
+    h('div', { class: 'row' },
+      made.persona === 'interpreter'
+        ? h('a', { class: 'button big', href: `#/talk?ids=${made.id}` }, '通訳をはじめる')
+        : [h('a', { class: 'button big', href: `#/talk?ids=${made.id}` }, '声で話す'), h('button', { class: 'secondary', onclick: (e) => startChat(made, e.currentTarget) }, '文字で話す')]),
+    h('ul', { class: 'tips' },
+      h('li', {}, h('b', {}, 'トーク'), '：声でも文字でも話せます。名前を呼べば、複数の相棒と同時に話せます。'),
+      h('li', {}, h('b', {}, 'ノート'), '：相棒が覚えたことや、登録した予定・記録が見られます。'),
+      h('li', {}, h('b', {}, 'お知らせ'), '：相棒からの朝・夜のメッセージや、予定のお知らせが届きます。')));
   return [
+    welcome,
     h('section', { class: 'greeting' },
       h('p', { class: 'muted' }, `${d.getUTCMonth() + 1}月${d.getUTCDate()}日（${WEEKDAY[d.getUTCDay()]}）`),
-      h('h1', {}, `${greet}`),
+      h('h1', {}, `${greet}${me.user.nickname ? `、${me.user.nickname}さん` : ''}`),
       h('div', { class: 'row' },
         talkable[0] && h('a', { class: 'button big', href: `#/talk?ids=${talkable[0].id}` }, `${talkable[0].name}に話しかける`),
         talkable.length > 1 && h('a', { class: 'button secondary', href: `#/talk?ids=${talkable.slice(0, 4).map((c) => c.id).join(',')}` }, 'みんなで話す'))),
@@ -197,7 +318,7 @@ async function homePage() {
 // はじめての人：公式の相棒から選んでもらう
 async function onboardingPage() {
   const { suggested } = await api('/api/companions');
-  const picked = new Set(suggested.filter((c) => ['secretary', 'trainer'].includes(c.persona)).map((c) => c.id));
+  const picked = new Set(suggested.filter((c) => ['secretary', 'tutor'].includes(c.persona)).map((c) => c.id));
   const grid = h('div', { class: 'grid' });
   const render = () => put(grid, suggested.map((c) => h('button', {
     class: 'card pick', 'aria-pressed': picked.has(c.id) ? 'true' : 'false',
@@ -215,14 +336,15 @@ async function onboardingPage() {
   };
   return [
     h('section', { class: 'greeting' },
-      h('h1', {}, 'ようこそ。まずは相棒を選びましょう'),
-      h('p', { class: 'muted' }, 'あとから何人でも増やせます。相棒はあなたの予定や好きなものを覚えて、話すほど合ってきます。')),
-    grid, msg,
-    h('p', {}, h('button', { class: 'big', onclick: (e) => start(e.currentTarget) }, 'この相棒ではじめる')),
+      h('h1', {}, 'ようこそ。まずは相棒を迎えましょう'),
+      h('p', { class: 'muted' }, '相棒はあなたの予定や好きなものを覚えて、話すほど合ってきます。あとから何人でも増やせます。')),
     h('section', { class: 'panel' },
       h('h2', {}, '自分だけの相棒をつくる'),
-      h('p', { class: 'muted' }, '役割（秘書・トレーナー・恋人など）を選んで、名前・性格・話し方・声を決められます。あなただけが話せる相棒です。'),
-      h('a', { class: 'button secondary', href: '#/make' }, 'つくってみる')),
+      h('p', { class: 'muted' }, '役割（先生・秘書・トレーナー・恋人など）を選んで、名前・性格・話し方・声を決められます。あなただけが話せる相棒です。'),
+      h('a', { class: 'button big', href: '#/make' }, 'つくる')),
+    h('h2', {}, 'または、公式の相棒から選ぶ'),
+    grid, msg,
+    h('p', {}, h('button', { class: 'secondary', onclick: (e) => start(e.currentTarget) }, 'この相棒ではじめる')),
   ];
 }
 
@@ -451,8 +573,12 @@ async function editPage(id) {
 }
 
 // 声と話す速さの入力欄（試しに聞くボタン付き）。キャラづくりの画面で共通。
+const VOICE_LABELS = {
+  marin: '女性・明るくやわらか', cedar: '男性・低めで落ち着いた', alloy: '中性的・おだやか', ash: '男性・はきはき', ballad: '男性・やさしい',
+  coral: '女性・あたたかい', echo: '男性・すっきり', sage: '女性・落ち着いた', shimmer: '女性・はなやか', verse: '男性・表情ゆたか',
+};
 function voiceFields(c, sampleText) {
-  const voice = h('select', {}, meta.voices.map((v) => h('option', { value: v, selected: c.voice === v }, v)));
+  const voice = h('select', {}, meta.voices.map((v) => h('option', { value: v, selected: c.voice === v }, VOICE_LABELS[v] ? `${VOICE_LABELS[v]}（${v}）` : v)));
   const speed = h('input', { type: 'range', min: '0.7', max: '1.3', step: '0.05', value: String(c.voice_speed ?? 1) });
   const speedLabel = h('span', { class: 'muted' });
   const updateSpeed = () => { speedLabel.textContent = ` ${Number(speed.value).toFixed(2)}倍`; };
@@ -461,13 +587,8 @@ function voiceFields(c, sampleText) {
   const voiceMsg = h('span', { class: 'muted' });
   const preview = async () => {
     voiceMsg.textContent = '再生の準備中…';
-    const res = await fetch('/api/voice/preview', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ voice: voice.value, speed: Number(speed.value), text: sampleText() || undefined }),
-    });
-    if (!res.ok) { voiceMsg.textContent = (await res.json().catch(() => ({}))).error ?? '再生できませんでした'; return; }
-    voiceMsg.textContent = 'AIが生成した音声です';
-    new Audio(URL.createObjectURL(await res.blob())).play();
+    const err = await playSpeech({ voice: voice.value, speed: Number(speed.value), text: sampleText() || undefined });
+    voiceMsg.textContent = err ?? 'AIが生成した音声です';
   };
   return {
     values: () => ({ voice: voice.value, voice_speed: Number(speed.value) }),
@@ -494,9 +615,11 @@ const MAKE_ROLES = {
 const PERSONALITY_CHIPS = ['やさしい', '明るい', 'クール', '落ち着いている', 'ちょっと厳しめ', '甘えん坊', 'おっとり', '面倒見がいい', 'ユーモアがある'];
 const SPEECH_CHIPS = ['敬語', 'タメ口', '関西弁', '一人称は「わたし」', '一人称は「僕」', '一人称は「俺」', '返事は短め'];
 
-async function makePage(id) {
-  if (!me.user) { location.hash = '#/login'; return []; }
-  const c = id ? (await api(`/api/characters/${id}`)).character : { persona: 'chat', voice: 'marin', voice_speed: 1 };
+// ログイン前でもつくれる。つくり終えたら下書きとして登録画面へ渡す。
+async function makePage(id, params) {
+  if (id && !me.user) { location.hash = '#/login'; return []; }
+  const fresh = { persona: MAKE_ROLES[params?.get('persona')] ? params.get('persona') : 'chat', voice: 'marin', voice_speed: 1 };
+  const c = id ? (await api(`/api/characters/${id}`)).character : (!me.user && loadDraft()) || fresh;
   if (id && c.creator_id !== me.user.id) { location.hash = `#/c/${id}`; return []; }
   let persona = c.persona;
   const roles = h('div', { class: 'grid roles' });
@@ -525,13 +648,29 @@ async function makePage(id) {
   const chips = (list) => h('div', { class: 'chips' }, list.map((t) => h('button', { class: 'chip-btn', onclick: () => addChip(t) }, `＋${t}`)));
   const voice = voiceFields(c, () => opening.value);
   const msg = h('p');
-  const save = async (btn) => {
+  // おまかせ：役割・名前・いま書いてあるキーワードから、性格の文章と最初のひとことを書いてもらう
+  const suggestMsg = h('span', { class: 'muted small' });
+  const suggest = async (btn) => {
     btn.disabled = true;
+    suggestMsg.textContent = '考えています…';
+    try {
+      const r = await api('/api/make/suggest', { method: 'POST', body: { persona, name: name.value, traits: profile.value, role: role.value } });
+      profile.value = r.profile;
+      if (!opening.value.trim()) opening.value = r.opening;
+      suggestMsg.textContent = '書きました。自由に直してください。';
+    } catch (err) { suggestMsg.textContent = err.message; }
+    btn.disabled = false;
+  };
+  const save = async (btn) => {
     const body = {
-      name: name.value, persona, role: role.value, profile: profile.value, world_setting: relation.value, opening: opening.value,
+      name: name.value.trim(), persona, role: role.value, profile: profile.value, world_setting: relation.value, opening: opening.value,
       tagline: c.tagline || `わたしだけの${MAKE_ROLES[persona][0]}`, tags: c.tags ?? '', visibility: c.visibility ?? 'private',
       ...voice.values(),
     };
+    if (!body.name) { put(msg, h('span', { class: 'error' }, '名前を入れてください')); name.focus(); return; }
+    if (persona === 'other' && !body.role.trim()) { put(msg, h('span', { class: 'error' }, '何を手伝ってもらうかを書いてください')); role.focus(); return; }
+    if (!me.user) { saveDraft(body); location.hash = '#/signup'; return; }
+    btn.disabled = true;
     try {
       if (id) {
         await api(`/api/characters/${id}`, { method: 'PUT', body });
@@ -550,16 +689,19 @@ async function makePage(id) {
   return [
     h('h1', {}, id ? `${c.name}を変える` : '自分だけの相棒をつくる'),
     h('p', { class: 'muted' }, 'あなただけが話せる相棒です（ほかの人には見えません）。役割を選ぶと、予定・記録・単語カードなどの道具が自動で付きます。'),
+    !me.user && h('ol', { class: 'progress' }, h('li', { class: 'on' }, '相棒をつくる'), h('li', {}, '無料登録'), h('li', {}, 'マイページで話す')),
     h('h2', {}, '1. 役割'), roles, roleWrap,
     h('h2', {}, '2. 名前と性格'),
     field('名前', name),
-    field('性格・話し方', profile, '下のボタンで足すか、自由に書いてください。'),
+    field('性格・話し方', profile, '下のボタンで足すか、自由に書いてください。キーワードだけ入れて「おまかせ」でも書けます。'),
     chips(PERSONALITY_CHIPS), chips(SPEECH_CHIPS),
+    h('div', { class: 'row' }, h('button', { class: 'secondary', onclick: (e) => suggest(e.currentTarget) }, '✨ おまかせで書く'), suggestMsg),
     field('あなたとの関係・呼び方（なくてもOK）', relation),
     field('最初のひとこと（なくてもOK）', opening),
     h('h2', {}, '3. 声'), voice.nodes,
     msg,
-    h('p', {}, h('button', { class: 'big', onclick: (e) => save(e.currentTarget) }, id ? '保存する' : 'この相棒と話してみる'),
+    !me.user && h('p', { class: 'muted small' }, '最後に無料登録をすると、この相棒がマイページで待っています。'),
+    h('p', {}, h('button', { class: 'big', onclick: (e) => save(e.currentTarget) }, id ? '保存する' : me.user ? 'この相棒と話してみる' : 'この相棒で登録する（無料）'),
       ' ', id && h('a', { class: 'button secondary', href: `#/c/${id}` }, 'やめる')),
   ];
 }
@@ -910,6 +1052,12 @@ async function settingsPage() {
     try { await api('/api/me/birth-date', { method: 'POST', body: { birthDate: birth.value } }); birthMsg.textContent = '保存しました'; }
     catch (err) { birthMsg.textContent = err.message; }
   };
+  const nick = h('input', { maxlength: 20, value: me.user.nickname ?? '' });
+  const nickMsg = h('span', { class: 'muted' });
+  const saveNick = async () => {
+    try { await api('/api/me/nickname', { method: 'PUT', body: { nickname: nick.value } }); nickMsg.textContent = '保存しました'; }
+    catch (err) { nickMsg.textContent = err.message; }
+  };
   const sub = me.subscription;
   return [
     h('h1', {}, '設定'),
@@ -934,6 +1082,8 @@ async function settingsPage() {
     h('section', { class: 'panel' },
       h('h2', {}, 'アカウント'),
       h('p', {}, me.user.email),
+      h('label', {}, 'あなたの呼び名（相棒があなたを呼ぶ名前）'),
+      h('div', { class: 'row' }, h('div', { style: 'flex:1' }, nick), h('button', { class: 'secondary', onclick: saveNick }, '保存'), nickMsg),
       h('label', {}, '生年月日（18歳以上が対象のキャラを使うときに必要です）'),
       h('div', { class: 'row' }, h('div', { style: 'flex:1' }, birth), h('button', { class: 'secondary', onclick: saveBirth }, '保存'), birthMsg),
       h('p', {}, h('a', { href: '#/notes' }, '覚えていること・記録の確認と削除（ノート）')),
@@ -972,18 +1122,72 @@ async function creatorPage() {
   ];
 }
 
+// ---- 画面：新規登録（つくった相棒を連れて登録する） ----
+
+function signupPage() {
+  const draft = loadDraft();
+  const email = h('input', { type: 'email', placeholder: 'you@example.com', autocomplete: 'email' });
+  const nickname = h('input', { maxlength: 20, placeholder: '例：ゆう' });
+  const needsAge = draft?.persona === 'partner';
+  const birth = h('input', { type: 'date', max: new Date().toISOString().slice(0, 10) });
+  const msg = h('div');
+  const form = h('div', { class: 'stack' });
+  const greeting = draft && (draft.opening || `はじめまして、${draft.name}です。これからよろしくね。`);
+  const voiceMsg = h('span', { class: 'muted small' });
+  const submit = async (btn) => {
+    btn.disabled = true;
+    try {
+      const r = await api('/auth/login', { method: 'POST', body: {
+        email: email.value.trim(), nickname: nickname.value.trim(), birthDate: needsAge ? birth.value : undefined, character: draft ?? undefined,
+      } });
+      put(form, h('section', { class: 'panel' },
+        h('h2', {}, 'メールを送りました'),
+        h('p', {}, h('b', {}, email.value.trim()), ' に届いたリンクを開くと、', draft ? `${draft.name}が待つマイページ` : 'マイページ', 'に進みます。'),
+        h('p', { class: 'muted small' }, 'リンクの有効期限は15分です。届かないときは、迷惑メールのフォルダも確認してください。スマホで開いても大丈夫です。'),
+        r.devLink && h('p', {}, '開発モード：', h('a', { href: r.devLink }, 'ここをクリックして登録を完了'))));
+    } catch (err) {
+      btn.disabled = false;
+      put(msg, h('p', { class: 'error' }, err.message));
+    }
+  };
+  put(form,
+    h('label', {}, 'あなたの呼び名', h('span', { class: 'muted small' }, '（相棒があなたを呼ぶ名前。なくてもOK）')), nickname,
+    h('label', {}, 'メールアドレス'), email,
+    needsAge && [h('label', {}, '生年月日', h('span', { class: 'muted small' }, '（恋人の相棒は18歳以上の方が対象です）')), birth],
+    msg,
+    h('p', {}, h('button', { class: 'big', onclick: (e) => submit(e.currentTarget) }, '登録してはじめる（無料）')),
+    h('p', { class: 'muted small' }, 'パスワードは不要です。メールに届くリンクから登録が完了します。登録で50ptプレゼント。'));
+  return [
+    draft && h('ol', { class: 'progress' }, h('li', { class: 'done' }, '相棒をつくる'), h('li', { class: 'on' }, '無料登録'), h('li', {}, 'マイページで話す')),
+    draft
+      ? h('section', { class: 'panel made' },
+        h('div', { class: 'card-head' }, h('span', { class: `avatar big p-${draft.persona}` }, initial(draft.name)),
+          h('div', {}, h('p', { class: 'muted small' }, 'あなただけの相棒ができました'), h('h1', {}, draft.name), h('div', { class: 'tags' }, MAKE_ROLES[draft.persona]?.[0]))),
+        h('div', { class: 'bubble assistant' }, greeting),
+        h('div', { class: 'row' },
+          meta.voiceAvailable && h('button', { class: 'secondary small', onclick: async () => { voiceMsg.textContent = '再生の準備中…'; voiceMsg.textContent = await playSpeech({ voice: draft.voice, speed: draft.voice_speed, text: greeting }) ?? ''; } }, '▶ 声を聞く'),
+          h('a', { href: '#/make' }, '← 相棒を直す'), voiceMsg))
+      : h('section', { class: 'greeting' }, h('h1', {}, 'AIボウをはじめる'),
+        h('p', { class: 'muted' }, '先に', h('a', { href: '#/make' }, '自分だけの相棒をつくってから'), '登録すると、マイページですぐに話せます。')),
+    h('h2', {}, draft ? `${draft.name}と話すために、無料登録` : '無料登録'),
+    form,
+    h('p', { class: 'muted small' }, 'すでに登録済みの方は ', h('a', { href: '#/login' }, 'ログイン')),
+  ];
+}
+
 function loginPage() {
-  const email = h('input', { type: 'email', placeholder: 'you@example.com' });
+  const email = h('input', { type: 'email', placeholder: 'you@example.com', autocomplete: 'email' });
   const msg = h('p');
   const submit = async () => {
     try {
-      const r = await api('/auth/login', { method: 'POST', body: { email: email.value } });
-      put(msg, 'ログイン用リンクをメールで送りました。',
+      const r = await api('/auth/login', { method: 'POST', body: { email: email.value.trim() } });
+      put(msg, 'ログイン用のリンクをメールで送りました。',
         r.devLink ? [h('br'), '開発モード: ', h('a', { href: r.devLink }, 'ここをクリックしてログイン')] : null);
     } catch (err) { put(msg, h('span', { class: 'error' }, err.message)); }
   };
-  return [h('h1', {}, 'ログイン / 新規登録'), h('p', { class: 'muted' }, 'メールアドレスに届くリンクからログインします。新規登録で50ptプレゼント。'),
-    email, h('p', {}, h('button', { onclick: submit }, 'リンクを送る')), msg];
+  return [h('h1', {}, 'ログイン'), h('p', { class: 'muted' }, 'メールアドレスに届くリンクからログインします。'),
+    email, h('p', {}, h('button', { onclick: submit }, 'リンクを送る')), msg,
+    h('p', { class: 'muted small' }, 'はじめての方は ', h('a', { href: '#/make' }, '自分だけの相棒をつくる'), ' から。')];
 }
 
 // ---- ルーター ----
@@ -998,7 +1202,7 @@ async function route() {
   try {
     await refreshMe();
     let content;
-    if (parts.length === 0) content = await homePage();
+    if (parts.length === 0) content = await homePage(params);
     else if (parts[0] === 'discover') content = await discoverPage(params);
     else if (parts[0] === 'c') content = await characterPage(parts[1]);
     else if (parts[0] === 'chat') content = await chatPage(parts[1]);
@@ -1007,7 +1211,8 @@ async function route() {
     else if (parts[0] === 'inbox') content = await inboxPage();
     else if (parts[0] === 'billing') content = await billingPage(params);
     else if (parts[0] === 'settings') content = await settingsPage();
-    else if (parts[0] === 'make') content = await makePage(parts[1] ?? null);
+    else if (parts[0] === 'make') content = await makePage(parts[1] ?? null, params);
+    else if (parts[0] === 'signup') content = me.user ? (location.replace('#/'), []) : signupPage();
     else if (parts[0] === 'creator' && parts[1] === 'new') content = await editPage(null);
     else if (parts[0] === 'creator' && parts[1] === 'edit') content = await editPage(parts[2]);
     else if (parts[0] === 'creator') content = await creatorPage();

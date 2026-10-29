@@ -48,11 +48,11 @@ test('はじめての人には公式の相棒をすすめ、相棒にすると�
   let r = (await u('GET', '/api/companions')).body;
   assert.equal(r.companions.length, 0);
   assert.equal(r.suggested.length, 6);
-  const [shion, kai] = officialIds;
+  const [, shion, kai] = officialIds; // 黒崎（秘書）・カイ
   await u('POST', '/api/companions', { characterId: shion });
   await u('POST', '/api/companions', { characterId: kai });
   r = (await u('GET', '/api/companions')).body;
-  assert.deepEqual(r.companions.map((c) => c.name).sort(), ['カイ', 'シオン']);
+  assert.deepEqual(r.companions.map((c) => c.name).sort(), ['カイ', '黒崎']);
   assert.equal(r.suggested.length, 4);
   assert.equal((await u('GET', `/api/characters/${kai}`)).body.character.companion, true);
 
@@ -82,7 +82,7 @@ test('ホーム：相棒・今日と明日の予定・届いたメッセージ�
   const { db, client, officialIds } = setup();
   const u = client();
   const userId = await u.login('a@example.com');
-  const shion = db.prepare('SELECT * FROM characters WHERE id = ?').get(officialIds[0]);
+  const shion = db.prepare('SELECT * FROM characters WHERE id = ?').get(officialIds[1]);
   await u('POST', '/api/companions', { characterId: shion.id });
   const tomorrow = new Date(Date.now() + 9 * 3600_000 + 86400_000).toISOString().slice(0, 10);
   executeTool(db, { userId, chara: shion, name: 'add_event', args: { date: tomorrow, time: '10:00', title: '歯医者' } });

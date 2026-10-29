@@ -169,3 +169,47 @@ button.card.pick p { margin: 6px 0 0; color: var(--muted); font-size: .9rem; }
 .grid.roles button.card.pick { padding: 10px 12px; }
 .grid.roles h3 { font-size: .98rem; }
 p.small { font-size: .85rem; margin: 2px 0 4px; }
+
+/* メインページ */
+.eyebrow { margin: 0; color: var(--accent); font-weight: 700; font-size: .9rem; letter-spacing: .04em; }
+.hero h1 { font-size: clamp(1.7rem, 6vw, 2.4rem); margin: 0; }
+.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.steps li { display: flex; gap: 12px; align-items: flex-start; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.steps p { margin: 2px 0 0; color: var(--muted); font-size: .92rem; }
+.step-no { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--accent-text); display: grid; place-items: center; font-weight: 700; }
+a.card.role-card { color: inherit; display: grid; gap: 4px; align-content: start; }
+a.card.role-card p { margin: 0; font-size: .88rem; }
+a.card.role-card .link { color: var(--accent); font-size: .85rem; font-weight: 700; }
+a.card.role-card:hover { border-color: var(--accent); }
+.panel.cta { text-align: center; }
+.panel.cta p { margin: 0 0 12px; }
+
+/* お試し会話 */
+.demo { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.demo-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.demo-tab { display: flex; gap: 8px; align-items: center; text-align: left; white-space: normal; background: var(--bg); color: var(--text); border: 2px solid var(--border); border-radius: 12px; padding: 8px 10px; }
+.demo-tab[aria-selected="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.demo-tab small { display: block; color: var(--muted); font-size: .78rem; }
+.demo-chat { max-height: 420px; overflow-y: auto; padding: 4px 2px; margin-bottom: 6px; }
+.demo-tagline { margin: 0; text-align: center; }
+.bubble .mini { display: block; margin-top: 6px; }
+button.mini { background: transparent; color: var(--accent); border: 1px solid var(--border); padding: 1px 10px; font-size: .8rem; }
+.demo-cta { align-self: stretch; text-align: center; background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border: 1px dashed var(--accent); border-radius: 12px; padding: 10px 12px; }
+.demo-cta p { margin: 0 0 8px; font-size: .92rem; }
+.small { font-size: .85rem; }
+
+/* 相棒づくり → 登録 → マイページ の進み具合 */
+.progress { list-style: none; display: flex; gap: 6px; padding: 0; margin: 4px 0 14px; font-size: .8rem; color: var(--muted); flex-wrap: wrap; }
+.progress li { padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); }
+.progress li.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.progress li.done { color: var(--text); }
+.progress li.done::before { content: '✓ '; }
+.panel.made h1 { margin: 0; }
+.panel.made .bubble { margin: 12px 0; max-width: 100%; }
+.stack { display: grid; gap: 6px; }
+.stack label { margin-top: 6px; }
+.panel.welcome { border-color: var(--accent); }
+.panel.welcome h1 { margin: 0; font-size: 1.4rem; }
+.panel.welcome p { margin: 2px 0 0; }
+.tips { margin: 12px 0 0; padding-left: 1.2em; color: var(--muted); font-size: .9rem; }
+.demo-box .composer { position: static; background: transparent; padding-bottom: 0; }

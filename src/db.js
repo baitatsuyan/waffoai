@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   display_name TEXT NOT NULL,
+  nickname TEXT,
   birth_date TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -15,7 +16,8 @@ CREATE TABLE IF NOT EXISTS login_tokens (
   token_hash TEXT PRIMARY KEY,
   email TEXT NOT NULL,
   expires_at TEXT NOT NULL,
-  used_at TEXT
+  used_at TEXT,
+  pending TEXT -- 登録前につくった相棒など、ログイン完了時に反映するもの（JSON）
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -269,7 +271,8 @@ export function openDb(path) {
 
 // 既存の DB に後から足した列を追加する（CREATE TABLE IF NOT EXISTS では列が増えないため）。
 const ADDED_COLUMNS = {
-  users: { birth_date: 'TEXT' },
+  users: { birth_date: 'TEXT', nickname: 'TEXT' },
+  login_tokens: { pending: 'TEXT' },
   characters: {
     persona: "TEXT NOT NULL DEFAULT 'chat'",
     role: "TEXT NOT NULL DEFAULT ''",

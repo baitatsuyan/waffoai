@@ -15,6 +15,15 @@ export function touchCompanion(db, userId, characterId) {
   `).run(userId, characterId);
 }
 
+// 相棒に加える。上限を超えるときは加えずに false を返す。
+export function addCompanion(db, userId, characterId) {
+  const count = db.prepare('SELECT COUNT(*) AS n FROM user_companions WHERE user_id = ?').get(userId).n;
+  const exists = db.prepare('SELECT 1 FROM user_companions WHERE user_id = ? AND character_id = ?').get(userId, characterId);
+  if (!exists && count >= MAX_COMPANIONS) return false;
+  db.prepare('INSERT OR IGNORE INTO user_companions (user_id, character_id) VALUES (?, ?)').run(userId, characterId);
+  return true;
+}
+
 function listCompanions(db, userId) {
   return db.prepare(`
     SELECT c.id, c.name, c.tagline, c.persona, c.role, c.voice, uc.added_at, uc.last_used_at,
@@ -46,10 +55,7 @@ export function homeRoutes(app, { db, requireUser, loadReadableCharacter }) {
     const { characterId } = await c.req.json().catch(() => ({}));
     const chara = loadReadableCharacter(characterId, user);
     if (!chara) return c.json({ error: 'キャラが見つかりません' }, 404);
-    const count = db.prepare('SELECT COUNT(*) AS n FROM user_companions WHERE user_id = ?').get(user.id).n;
-    const exists = db.prepare('SELECT 1 FROM user_companions WHERE user_id = ? AND character_id = ?').get(user.id, chara.id);
-    if (!exists && count >= MAX_COMPANIONS) return c.json({ error: `相棒は${MAX_COMPANIONS}人までです。誰かを外してから加えてください` }, 400);
-    db.prepare('INSERT OR IGNORE INTO user_companions (user_id, character_id) VALUES (?, ?)').run(user.id, chara.id);
+    if (!addCompanion(db, user.id, chara.id)) return c.json({ error: `相棒は${MAX_COMPANIONS}人までです。誰かを外してから加えてください` }, 400);
     return c.json({ ok: true }, 201);
   });
 

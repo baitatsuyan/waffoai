@@ -33,6 +33,7 @@ export function buildInstructions(db, chara, { userId, members = [chara], mode =
   const tweaks = effectiveTweaks(db, chara, userId);
   if (tweakOverride !== undefined) tweaks.personal = tweakOverride;
   const memories = userId ? visibleMemories(db, userId, chara.id) : [];
+  const nickname = userId ? db.prepare('SELECT nickname FROM users WHERE id = ?').get(userId)?.nickname : null;
   const role = chara.persona === 'other' ? `次の役割を担う：${chara.role || '（未設定）'}` : persona.rule;
 
   return [
@@ -48,6 +49,7 @@ export function buildInstructions(db, chara, { userId, members = [chara], mode =
     mode === 'voice'
       ? '# 話し方\n音声で会話しています。話し言葉で、1回の発話は2〜3文に収める。箇条書きや記号は使わない。ユーザが話し始めたらすぐに聞く側に回る。'
       : '# 書き方\n動作やしぐさは *アスタリスク* で囲み、台詞はそのまま書く。1回の返答は300字程度まで。',
+    nickname && `# ユーザの呼び名\nユーザは「${nickname}」と呼ばれたい。設定で別の呼び方が決まっていなければ、この名前で呼ぶ。`,
     memories.length > 0 && `# ユーザについて覚えていること\n${memories.map((m) => `- [${m.kind}] ${m.content}`).join('\n')}`,
     `# 現在日時（日本時間）\n${todayJst(now)}`,
   ].filter(Boolean).join('\n\n');

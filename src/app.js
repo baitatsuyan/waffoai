@@ -13,10 +13,11 @@ import { generateReply as defaultGenerateReply, generateText as defaultGenerateT
 import { PERSONAS, VOICES, INTERPRETER_LANGUAGES } from './personas.js';
 import { buildInstructions } from './prompt.js';
 import { chatToolDefs, executeTool, ToolError } from './tools.js';
-import { checkUserText, ageGate, trackPartnerUsage } from './safety.js';
+import { checkUserText, ageGate, ageOf, trackPartnerUsage } from './safety.js';
 import { companionRoutes } from './routes/companion.js';
 import { voiceRoutes } from './routes/voice.js';
-import { homeRoutes, touchCompanion } from './routes/home.js';
+import { homeRoutes, touchCompanion, addCompanion } from './routes/home.js';
+import { demoRoutes } from './routes/demo.js';
 import { officialOwnerId, OFFICIAL_EMAIL } from './seed.js';
 import { createMailer, loginMail } from './mail.js';
 
@@ -52,14 +53,18 @@ export function createApp({
   });
 
   // ---- 認証 ----
+  // 新規登録もログインも同じ入口。登録前につくった相棒（character）や呼び名は、リンクを開いたときに反映する。
   app.post('/auth/login', async (c) => {
-    const { email } = await c.req.json().catch(() => ({}));
+    const body = await c.req.json().catch(() => ({}));
+    const { email } = body;
     if (typeof email !== 'string' || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 320
       || email.trim().toLowerCase() === OFFICIAL_EMAIL) {
       return c.json({ error: 'メールアドレスが正しくありません' }, 400);
     }
+    const pending = validateSignup(body);
+    if (pending.error) return c.json(pending, 400);
     if (isProduction && !sendMail) return c.json({ error: 'ただいまログインを受け付けていません' }, 503);
-    const link = createLoginLink(db, email.trim().toLowerCase());
+    const link = createLoginLink(db, email.trim().toLowerCase(), { pending: pending.value });
     if (sendMail) {
       try {
         await sendMail({ to: email.trim(), ...loginMail(link) });
@@ -74,10 +79,11 @@ export function createApp({
   });
 
   app.get('/auth/verify', (c) => {
-    const user = consumeLoginToken(db, c.req.query('token') ?? '');
-    if (!user) return c.text('ログインリンクが無効か期限切れです。もう一度お試しください。', 400);
-    startSession(c, db, user.id);
-    return c.redirect('/');
+    const login = consumeLoginToken(db, c.req.query('token') ?? '');
+    if (!login) return c.text('ログインリンクが無効か期限切れです。もう一度お試しください。', 400);
+    startSession(c, db, login.user.id);
+    const madeId = login.pending ? applySignup(db, login.user, login.pending) : null;
+    return c.redirect(madeId ? `/#/?welcome=${madeId}` : '/');
   });
 
   app.post('/auth/logout', (c) => {
@@ -90,7 +96,7 @@ export function createApp({
     const user = currentUser(c, db);
     if (!user) return c.json({ user: null });
     return c.json({
-      user: { id: user.id, email: user.email, displayName: user.display_name, birthDate: user.birth_date },
+      user: { id: user.id, email: user.email, displayName: user.display_name, nickname: user.nickname, birthDate: user.birth_date },
       points: getBalance(db, user.id),
       usage: getUsage(db, user.id),
       subscription: db.prepare(`
@@ -145,12 +151,15 @@ export function createApp({
   app.post('/api/characters', requireUser, async (c) => {
     const input = validateCharacter(await c.req.json().catch(() => null));
     if (input.error) return c.json(input, 400);
-    const r = db.prepare(`
-      INSERT INTO characters (creator_id, name, tagline, world_setting, profile, opening, tags, visibility, persona, role, voice, voice_speed)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(c.get('user').id, input.name, input.tagline, input.world_setting, input.profile, input.opening, input.tags, input.visibility,
-      input.persona, input.role, input.voice, input.voice_speed);
-    return c.json({ id: Number(r.lastInsertRowid) }, 201);
+    return c.json({ id: insertCharacter(db, c.get('user').id, input) }, 201);
+  });
+
+  // 呼び名（キャラがユーザを呼ぶときの名前）
+  app.put('/api/me/nickname', requireUser, async (c) => {
+    const { nickname } = await c.req.json().catch(() => ({}));
+    if (typeof nickname !== 'string' || nickname.trim().length > 20) return c.json({ error: '呼び名は20文字以内で入力してください' }, 400);
+    db.prepare('UPDATE users SET nickname = ? WHERE id = ?').run(nickname.trim() || null, c.get('user').id);
+    return c.json({ ok: true });
   });
 
   app.put('/api/characters/:id', requireUser, async (c) => {
@@ -276,6 +285,10 @@ export function createApp({
   homeRoutes(app, { db, requireUser, loadReadableCharacter });
   companionRoutes(app, { db, requireUser, loadReadableCharacter, generateText });
   voiceRoutes(app, { db, requireUser, loadReadableCharacter, realtime });
+  demoRoutes(app, {
+    db, generateReply, generateText, realtime,
+    useScript: !(env.llmBaseUrl && env.llmApiKey) && generateReply === defaultGenerateReply,
+  });
 
   // ---- 課金 ----
   app.get('/api/billing/catalog', (c) =>
@@ -359,6 +372,52 @@ export function createApp({
 
   app.use('/*', serveStatic({ root: './public' }));
   return app;
+}
+
+function insertCharacter(db, userId, input) {
+  const r = db.prepare(`
+    INSERT INTO characters (creator_id, name, tagline, world_setting, profile, opening, tags, visibility, persona, role, voice, voice_speed)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(userId, input.name, input.tagline, input.world_setting, input.profile, input.opening, input.tags, input.visibility,
+    input.persona, input.role, input.voice, input.voice_speed);
+  return Number(r.lastInsertRowid);
+}
+
+// 登録画面で受け取る呼び名・生年月日・登録前につくった相棒。なければ value は null。
+function validateSignup(body) {
+  const value = {};
+  if (body.nickname != null && body.nickname !== '') {
+    if (typeof body.nickname !== 'string' || body.nickname.trim().length > 20) return { error: '呼び名は20文字以内で入力してください' };
+    value.nickname = body.nickname.trim();
+  }
+  if (body.birthDate) {
+    const age = ageOf(body.birthDate);
+    if (age === null || age < 0 || age > 120) return { error: '生年月日は YYYY-MM-DD で入力してください' };
+    value.birthDate = body.birthDate;
+  }
+  if (body.character) {
+    const input = validateCharacter({ ...body.character, visibility: 'private', tags: '' });
+    if (input.error) return input;
+    const gate = ageGate({ birth_date: value.birthDate ?? null }, input);
+    if (gate) return gate;
+    value.character = input;
+  }
+  return { value: Object.keys(value).length ? value : null };
+}
+
+// ログインリンクを開いたとき：呼び名・生年月日を保存し、つくった相棒を作って相棒に加える。相棒の id を返す。
+function applySignup(db, user, pending) {
+  return tx(db, () => {
+    if (pending.nickname) db.prepare('UPDATE users SET nickname = ? WHERE id = ?').run(pending.nickname, user.id);
+    if (pending.birthDate && !user.birth_date) db.prepare('UPDATE users SET birth_date = ? WHERE id = ?').run(pending.birthDate, user.id);
+    const input = pending.character;
+    if (!input) return null;
+    const id = insertCharacter(db, user.id, input);
+    addCompanion(db, user.id, id);
+    db.prepare(`INSERT INTO inbox (user_id, character_id, kind, text) VALUES (?, ?, 'welcome', ?)`)
+      .run(user.id, id, input.opening || `はじめまして、${input.name}です。これからよろしくね。`);
+    return id;
+  });
 }
 
 function validateCharacter(body) {

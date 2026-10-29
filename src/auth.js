@@ -11,23 +11,24 @@ const SESSION_COOKIE = 'sid';
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 
 // メールのマジックリンクでログインする（パスワードを持たない）。
-// 本番ではメール送信サービスでリンクを送る。開発中はサーバログに出す。
-export function createLoginLink(db, email, now = new Date()) {
+// pending は登録前につくった相棒など、リンクを開いたときに反映するもの。メールを別の端末で開いても引き継げるよう、サーバ側に持つ。
+export function createLoginLink(db, email, { pending = null, now = new Date() } = {}) {
   const token = randomBytes(32).toString('base64url');
-  db.prepare('INSERT INTO login_tokens (token_hash, email, expires_at) VALUES (?, ?, ?)')
-    .run(sha256(token), email, sqlTime(new Date(now.getTime() + LOGIN_TOKEN_TTL_MS)));
+  db.prepare('INSERT INTO login_tokens (token_hash, email, expires_at, pending) VALUES (?, ?, ?, ?)')
+    .run(sha256(token), email, sqlTime(new Date(now.getTime() + LOGIN_TOKEN_TTL_MS)), pending ? JSON.stringify(pending) : null);
   return `${env.baseUrl}/auth/verify?token=${token}`;
 }
 
-// トークンを1回限りで消費し、ユーザを返す（初回ならユーザ作成と登録ボーナス付与）。
+// トークンを1回限りで消費し、ユーザと pending を返す（初回ならユーザ作成と登録ボーナス付与）。
 export function consumeLoginToken(db, token, now = new Date()) {
   return tx(db, () => {
-    const row = db.prepare('SELECT email FROM login_tokens WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?')
+    const row = db.prepare('SELECT email, pending FROM login_tokens WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?')
       .get(sha256(token), sqlTime(now));
     if (!row) return null;
     db.prepare('UPDATE login_tokens SET used_at = ? WHERE token_hash = ?').run(sqlTime(now), sha256(token));
 
     let user = db.prepare('SELECT * FROM users WHERE email = ?').get(row.email);
+    const created = !user;
     if (!user) {
       const r = db.prepare('INSERT INTO users (email, display_name) VALUES (?, ?)').run(row.email, row.email.split('@')[0]);
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(r.lastInsertRowid);
@@ -40,7 +41,7 @@ export function consumeLoginToken(db, token, now = new Date()) {
         expiresAt: new Date(now.getTime() + FREE_POINT_TTL_DAYS * 86400_000),
       });
     }
-    return user;
+    return { user, created, pending: row.pending ? JSON.parse(row.pending) : null };
   });
 }
 

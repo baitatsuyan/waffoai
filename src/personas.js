@@ -12,7 +12,7 @@ export const PERSONAS = {
     tools: ['remember', 'log_workout', 'get_records'],
   },
   tutor: {
-    label: '資格の先生',
+    label: '勉強の先生',
     rule: '資格試験の先生として、試験日から逆算した計画を立て、要点を短く正確に説明する。説明のあとに確認の問題を1問出し、答えを採点したら結果を記録する。不確かな知識は断定しない。',
     tools: ['remember', 'record_quiz', 'get_records'],
   },
