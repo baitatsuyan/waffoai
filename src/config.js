@@ -8,8 +8,12 @@ export const env = {
   llmBaseUrl: process.env.LLM_BASE_URL ?? '',
   llmApiKey: process.env.LLM_API_KEY ?? '',
   llmModel: process.env.LLM_MODEL ?? '',
-  stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? '',
-  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
+  // Waffo 決済。鍵は Waffo Dashboard の Integration で発行・登録する。
+  waffoApiKey: process.env.WAFFO_API_KEY ?? '',
+  waffoPrivateKey: process.env.WAFFO_PRIVATE_KEY ?? '',
+  waffoPublicKey: process.env.WAFFO_PUBLIC_KEY ?? '',
+  waffoMerchantId: process.env.WAFFO_MERCHANT_ID ?? '',
+  waffoEnvironment: process.env.WAFFO_ENV ?? 'sandbox',
   adminEmails: (process.env.ADMIN_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
 };
 

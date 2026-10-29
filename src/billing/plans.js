@@ -7,11 +7,11 @@ export class PaymentRequiredError extends Error {}
 const JST_OFFSET_MS = 9 * 3600_000;
 const QUOTA_FIELD ={ chat_message: 'messagesPerPeriod', voice_generation: 'voicePerPeriod' };
 
-// 有効なサブスク（期間内の active / trialing / past_due）があればそのプラン、なければ free。
+// 期間内のサブスク（active、または解約済みでも支払い済み期間内）があればそのプラン、なければ free。
 export function getActivePlan(db, userId, now = new Date()) {
   const sub = db.prepare(`
     SELECT plan, interval, status, current_period_start, current_period_end FROM subscriptions
-    WHERE user_id = ? AND status IN ('active', 'trialing', 'past_due') AND current_period_end > ?
+    WHERE user_id = ? AND status IN ('active', 'canceled') AND current_period_end > ?
   `).get(userId, sqlTime(now));
   if (sub && PLANS[sub.plan]) {
     return { plan: sub.plan, ...PLANS[sub.plan], periodKey: `cycle:${sub.current_period_start}`, periodEnd: sub.current_period_end };

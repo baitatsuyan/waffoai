@@ -2,10 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../src/db.js';
 import { createApp } from '../src/app.js';
+import { generateKeyPairSync, createSign, createVerify } from 'node:crypto';
+import { Waffo, Environment } from '@waffo/waffo-node';
 
-function setup(generateReply = async ({ chara }) => ({ text: `${chara.name}です` })) {
+function setup(generateReply = async ({ chara }) => ({ text: `${chara.name}です` }), waffo = null) {
   const db = openDb(':memory:');
-  const app = createApp({ db, generateReply, isProduction: false });
+  const app = createApp({ db, waffo, generateReply, isProduction: false });
   // Cookie を保持する簡易クライアント
   const client = () => {
     let cookie = '';
@@ -17,7 +19,7 @@ function setup(generateReply = async ({ chara }) => ({ text: `${chara.name}で�
       });
       const set = res.headers.get('set-cookie');
       if (set) cookie = set.split(';')[0];
-      return { status: res.status, body: res.headers.get('content-type')?.includes('json') ? await res.json() : await res.text() };
+      return { status: res.status, headers: res.headers, body: res.headers.get('content-type')?.includes('json') ? await res.json() : await res.text() };
     };
     call.login = async (email) => {
       const { body } = await call('POST', '/auth/login', { email });
@@ -109,4 +111,123 @@ test('ログインリンクは1回しか使えない', async () => {
   const path = new URL(body.devLink).pathname + new URL(body.devLink).search;
   assert.equal((await u('GET', path)).status, 302);
   assert.equal((await client()('GET', path)).status, 400);
+});
+
+// ---- Waffo 決済 ----
+
+function rsaPair() {
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'der' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'der' },
+  });
+  return { publicKey: publicKey.toString('base64'), privateKey: privateKey.toString('base64') };
+}
+const derKey = (b64, type) => ({ key: Buffer.from(b64, 'base64'), format: 'der', type });
+
+// 本物の SDK に、テスト用に生成した「Waffo 側」と「加盟店側」の鍵を持たせる
+function realWaffo() {
+  const waffoKeys = rsaPair();
+  const merchantKeys = rsaPair();
+  const waffo = new Waffo({ apiKey: 'test', privateKey: merchantKeys.privateKey, waffoPublicKey: waffoKeys.publicKey, merchantId: 'M1', environment: Environment.SANDBOX });
+  const signAsWaffo = (body) => createSign('SHA256').update(body).sign(derKey(waffoKeys.privateKey, 'pkcs8'), 'base64');
+  const verifyAsWaffo = (body, sig) => createVerify('SHA256').update(body).verify(derKey(merchantKeys.publicKey, 'spki'), sig, 'base64');
+  return { waffo, signAsWaffo, verifyAsWaffo };
+}
+
+test('Waffo 未設定なら決済APIは503（カタログは見られる）', async () => {
+  const { client } = setup();
+  const u = client();
+  await u.login('a@example.com');
+  assert.equal((await u('POST', '/api/billing/checkout/points', { pack: 'p1000' })).status, 503);
+  assert.equal((await u('GET', '/api/billing/catalog')).status, 200);
+});
+
+test('Waffo Webhook: 正しい署名なら付与して署名付き success、偽の署名なら failed で何もしない', async () => {
+  const { waffo, signAsWaffo, verifyAsWaffo } = realWaffo();
+  const { client, db } = setup(undefined, waffo);
+  const u = client();
+  await u.login('buyer@example.com');
+  const userId = db.prepare('SELECT id FROM users').get().id;
+  db.prepare(`INSERT INTO payments (payment_request_id, user_id, pack, amount_jpy, points, status) VALUES ('pr1', ?, 'p1000', 1000, 1030, 'pending')`).run(userId);
+
+  const body = JSON.stringify({ eventType: 'PAYMENT_NOTIFICATION', result: { paymentRequestId: 'pr1', acquiringOrderId: 'ACQ1', orderStatus: 'PAY_SUCCESS', orderCurrency: 'JPY', orderAmount: '1000' } });
+  const post = (signature) => app(db, waffo).request('/api/waffo/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-SIGNATURE': signature }, body });
+
+  const forged = await post(signAsWaffo(body + ' '));
+  assert.equal(await forged.text(), '{"message":"failed"}');
+  assert.equal((await u('GET', '/api/me')).body.points.paid, 0);
+
+  const ok = await post(signAsWaffo(body));
+  const okBody = await ok.text();
+  assert.equal(ok.status, 200);
+  assert.equal(okBody, '{"message":"success"}');
+  assert.ok(verifyAsWaffo(okBody, ok.headers.get('x-signature')), '応答に加盟店の秘密鍵で署名している');
+  assert.equal((await u('GET', '/api/me')).body.points.paid, 1030);
+});
+
+function app(db, waffo) {
+  return createApp({ db, waffo, generateReply: async () => ({ text: '' }), isProduction: false });
+}
+
+function fakeWaffo(calls) {
+  const ok = (data) => ({ isSuccess: () => true, getData: () => data, getCode: () => '0', getMessage: () => undefined });
+  return {
+    order: () => ({
+      create: async (p) => { calls.push(['order.create', p]); return ok({ acquiringOrderId: 'ACQ9', orderStatus: 'PAY_IN_PROGRESS', orderAction: JSON.stringify({ webUrl: 'https://cashier.example/pay' }) }); },
+      inquiry: async (p) => { calls.push(['order.inquiry', p]); return ok({ paymentRequestId: p.paymentRequestId, orderStatus: 'PAY_SUCCESS', orderCurrency: 'JPY', orderAmount: '1000' }); },
+    }),
+    subscription: () => ({
+      create: async (p) => { calls.push(['subscription.create', p]); return ok({ subscriptionStatus: 'AUTHORIZATION_REQUIRED', subscriptionAction: JSON.stringify({ webUrl: 'https://cashier.example/sub' }) }); },
+      cancel: async (p) => { calls.push(['subscription.cancel', p]); return ok({}); },
+      manage: async (p) => { calls.push(['subscription.manage', p]); return ok({ managementUrl: 'https://cashier.example/manage' }); },
+    }),
+  };
+}
+
+test('Waffo: ポイント購入は JPY の注文を作って決済画面へ。戻ったら照会して付与', async () => {
+  const calls = [];
+  const { client } = setup(undefined, fakeWaffo(calls));
+  const u = client();
+  await u.login('buyer@example.com');
+  const r = await u('POST', '/api/billing/checkout/points', { pack: 'p1000' });
+  assert.equal(r.body.url, 'https://cashier.example/pay');
+  const [, p] = calls[0];
+  assert.equal(p.orderCurrency, 'JPY');
+  assert.equal(p.orderAmount, '1000');
+  assert.equal(p.paymentInfo.productName, 'ONE_TIME_PAYMENT');
+  assert.equal(p.userInfo.userEmail, 'buyer@example.com');
+  assert.ok(p.paymentRequestId.length <= 32);
+  assert.match(p.notifyUrl, /\/api\/waffo\/webhook$/);
+
+  const sync = await u('POST', `/api/billing/payments/${p.paymentRequestId}/sync`);
+  assert.equal(sync.body.status, 'paid');
+  assert.equal((await u('GET', '/api/me')).body.points.paid, 1030);
+  // 他人の注文は照会できない
+  const other = client();
+  await other.login('other@example.com');
+  assert.equal((await other('POST', `/api/billing/payments/${p.paymentRequestId}/sync`)).body.status, null);
+});
+
+test('Waffo: サブスク申し込み・二重加入の拒否・解約', async () => {
+  const calls = [];
+  const { client, db } = setup(undefined, fakeWaffo(calls));
+  const u = client();
+  await u.login('sub@example.com');
+  const r = await u('POST', '/api/billing/checkout/subscription', { plan: 'plus', interval: 'year' });
+  assert.equal(r.body.url, 'https://cashier.example/sub');
+  const [, p] = calls[0];
+  assert.deepEqual([p.currency, p.amount, p.productInfo.periodType, p.productInfo.periodInterval], ['JPY', '10000', 'MONTHLY', '12']);
+
+  // 初回の支払いが確認できたら有効化（ここではDBを直接進める）
+  db.prepare(`UPDATE subscriptions SET status = 'active', subscription_request = pending_request, subscription_id = 'SUB1', pending_request = NULL,
+    current_period_start = datetime('now'), current_period_end = datetime('now', '+1 year')`).run();
+  assert.equal((await u('POST', '/api/billing/checkout/subscription', { plan: 'pro', interval: 'month' })).status, 400);
+
+  const cancel = await u('POST', '/api/billing/subscription/cancel');
+  assert.equal(cancel.status, 200);
+  assert.deepEqual(calls.at(-1)[1].subscriptionId, 'SUB1');
+  const me = (await u('GET', '/api/me')).body;
+  assert.equal(me.subscription.status, 'canceled');
+  assert.equal(me.usage.plan, 'plus'); // 期間末までは使える
 });

@@ -155,15 +155,41 @@ async function editPage(id) {
 
 async function billingPage(params) {
   const catalog = await api('/api/billing/catalog');
+  const msg = h('p');
+  const fail = (err) => msg.replaceChildren(h('span', { class: 'error' }, err.message));
   const checkout = async (path, body) => {
     if (!me.user) { location.hash = '#/login'; return; }
-    try { location.href = (await api(path, { method: 'POST', body })).url; } catch (err) { alert(err.message); }
+    try { location.href = (await api(path, { method: 'POST', body })).url; } catch (err) { fail(err); }
   };
   const status = params.get('status');
+  const payment = params.get('payment');
+  if (status === 'success' && payment && me.user) {
+    // Webhook より先に戻ってきた場合に備えて、決済結果を照会する
+    api(`/api/billing/payments/${encodeURIComponent(payment)}/sync`, { method: 'POST' })
+      .then((r) => { if (r.status === 'paid') { msg.textContent = 'ポイントを追加しました。'; refreshMe(); } })
+      .catch(() => {});
+  }
+  const sub = me.user?.id ? me.subscription : null;
+  const confirmCancel = h('span');
+  const askCancel = () => confirmCancel.replaceChildren(
+    `${sub.currentPeriodEnd?.slice(0, 10) ?? '期間末'}まで使えます。解約しますか？ `,
+    h('button', { class: 'secondary', onclick: async () => {
+      try { await api('/api/billing/subscription/cancel', { method: 'POST' }); msg.textContent = '解約しました。次回以降の請求はありません。'; await refreshMe(); route(); } catch (err) { fail(err); }
+    } }, '解約する'));
+  const subLine = sub && sub.status !== 'closed' && sub.status !== 'pending' && h('div', { class: 'section' },
+    `${catalog.plans[sub.plan].name}プラン（${sub.interval === 'year' ? '年額' : '月額'}） ・ `,
+    sub.status === 'active' ? `次回更新 ${sub.currentPeriodEnd?.slice(0, 10)}` : `解約済み（${sub.currentPeriodEnd?.slice(0, 10)}まで利用可）`,
+    sub.status === 'active' && h('div', { class: 'row' },
+      h('button', { class: 'secondary', onclick: () => checkout('/api/billing/subscription/manage') }, '支払い方法の変更'),
+      h('button', { class: 'secondary', onclick: askCancel }, '解約'),
+      confirmCancel));
   return [
     h('h1', {}, 'プランとポイント'),
-    status === 'success' && h('p', {}, 'お支払いを受け付けました。反映まで数秒かかることがあります（コンビニ・銀行振込は入金確認後）。'),
+    status === 'success' && h('p', {}, 'お支払いを受け付けました。反映まで数秒かかることがあります。'),
+    status === 'failed' && h('p', { class: 'error' }, 'お支払いが完了しませんでした。別の支払い方法でお試しください。'),
+    msg,
     me.user && h('p', { class: 'status' }, usageLine()),
+    subLine,
     h('h2', {}, 'サブスクリプション'),
     h('div', { class: 'plans' }, Object.entries(catalog.plans).map(([key, p]) => h('div', { class: 'card' },
       h('h3', {}, p.name),
@@ -171,11 +197,10 @@ async function billingPage(params) {
       p.priceJpy.year && h('div', { class: 'muted' }, `年額 ${yen(p.priceJpy.year)}`),
       h('div', {}, `会話 ${p.messagesPerPeriod.toLocaleString()}回/${p.resetPeriod === 'day' ? '日' : '月'}`),
       p.monthlyPoints > 0 && h('div', {}, `毎月 ${p.monthlyPoints}pt 付与`),
-      key !== 'free' && h('div', { class: 'row' },
+      key !== 'free' && sub?.status !== 'active' && h('div', { class: 'row' },
         h('button', { onclick: () => checkout('/api/billing/checkout/subscription', { plan: key, interval: 'month' }) }, '月額で加入'),
         p.priceJpy.year && h('button', { class: 'secondary', onclick: () => checkout('/api/billing/checkout/subscription', { plan: key, interval: 'year' }) }, '年額')),
     ))),
-    me.user && h('p', {}, h('button', { class: 'secondary', onclick: () => checkout('/api/billing/portal') }, '契約の変更・解約')),
     h('h2', {}, 'ポイント購入'),
     h('p', { class: 'muted' }, `会話枠を超えた分は1回 ${catalog.pointCosts.chat_message}pt。有償ポイントに有効期限はありません。`),
     h('div', { class: 'plans' }, Object.entries(catalog.pointPacks).map(([key, p]) => h('div', { class: 'card' },

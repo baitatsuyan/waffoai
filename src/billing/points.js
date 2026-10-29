@@ -72,9 +72,16 @@ export function restoreSpends(db, spendIds) {
   }
 }
 
-// 返金・チャージバック時：その購入で付与したロットの未使用分を失効させる。
-export function revokeLot(db, { source, sourceRef }) {
-  return db.prepare(`UPDATE point_lots SET remaining = 0 WHERE source = ? AND source_ref = ?`).run(source, sourceRef).changes;
+// 返金・チャージバック時：その購入で付与したロットの未使用分から amount だけ失効させる。
+// 同じ reason（返金IDなど）は1回しか処理しない。使用済みの分は取り戻せないので、失効できた数を返す。
+export function revokePoints(db, { source, sourceRef, amount, reason }) {
+  const lot = db.prepare('SELECT id, remaining FROM point_lots WHERE source = ? AND source_ref = ?').get(source, sourceRef);
+  if (!lot) return 0;
+  const take = Math.min(lot.remaining, amount);
+  const r = db.prepare('INSERT OR IGNORE INTO point_revocations (reason, lot_id, amount) VALUES (?, ?, ?)').run(reason, lot.id, take);
+  if (r.changes === 0) return 0;
+  db.prepare('UPDATE point_lots SET remaining = remaining - ? WHERE id = ?').run(take, lot.id);
+  return take;
 }
 
 // 資金決済法の「基準日未使用残高」（有償ポイントのみ）。3/31・9/30 時点で1,000万円超なら届出と供託が必要。

@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   display_name TEXT NOT NULL,
-  stripe_customer_id TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -24,14 +23,33 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at TEXT NOT NULL
 );
 
+-- ユーザごとのサブスク。status: pending（初回支払い待ち）/ active / canceled（期間末まで有効）/ closed。
+-- pending_* は支払い待ちの新しい申し込み。初回の支払いが確認できたら plan / interval に反映する。
 CREATE TABLE IF NOT EXISTS subscriptions (
   user_id INTEGER PRIMARY KEY REFERENCES users(id),
   plan TEXT NOT NULL,
   interval TEXT NOT NULL,
-  status TEXT NOT NULL,
-  stripe_subscription_id TEXT UNIQUE,
-  current_period_start TEXT NOT NULL,
-  current_period_end TEXT NOT NULL
+  status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'canceled', 'closed')),
+  subscription_request TEXT UNIQUE,
+  subscription_id TEXT,
+  pending_request TEXT UNIQUE,
+  pending_plan TEXT,
+  pending_interval TEXT,
+  current_period_no INTEGER,
+  current_period_start TEXT,
+  current_period_end TEXT
+);
+
+-- ポイント購入の注文（Waffo の単発決済）。
+CREATE TABLE IF NOT EXISTS payments (
+  payment_request_id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  pack TEXT NOT NULL,
+  amount_jpy INTEGER NOT NULL,
+  points INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'paid', 'closed', 'refunded', 'chargeback')),
+  acquiring_order_id TEXT UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- 期間内の利用回数。period_key は 'day:2026-10-29' や 'cycle:<period_start>'。
@@ -118,10 +136,12 @@ CREATE TABLE IF NOT EXISTS payouts (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Stripe Webhook の重複処理防止。
-CREATE TABLE IF NOT EXISTS stripe_events (
-  id TEXT PRIMARY KEY,
-  processed_at TEXT NOT NULL DEFAULT (datetime('now'))
+-- 返金・チャージバックによるポイント失効。reason（返金IDなど）で重複処理を防ぐ。
+CREATE TABLE IF NOT EXISTS point_revocations (
+  reason TEXT PRIMARY KEY,
+  lot_id INTEGER NOT NULL REFERENCES point_lots(id),
+  amount INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_lots_user ON point_lots(user_id, remaining);

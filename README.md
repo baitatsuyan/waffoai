@@ -20,15 +20,38 @@ API キーがなくても動きます。LLM 未設定ならモックで返答し
 
 | 変数 | 用途 |
 |---|---|
-| `BASE_URL` | 公開 URL（ログインリンク・Stripe の戻り先） |
+| `BASE_URL` | 公開 URL（ログインリンク・決済後の戻り先・Webhook の URL） |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 互換 API。例：OpenRouter は `https://openrouter.ai/api/v1`、BytePlus ModelArk は管理画面に表示されるエンドポイント |
-| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Stripe の決済と Webhook |
+| `WAFFO_API_KEY` / `WAFFO_MERCHANT_ID` | Waffo の API キーと加盟店 ID |
+| `WAFFO_PRIVATE_KEY` | 加盟店の秘密鍵（Base64 の PKCS8 DER、または PEM）。リクエストと Webhook 応答の署名に使う |
+| `WAFFO_PUBLIC_KEY` | Waffo の公開鍵（Dashboard の Integration に表示）。Webhook の署名検証に使う |
+| `WAFFO_ENV` | `sandbox`（既定）または `production` |
 | `ADMIN_EMAILS` | 運営用レポートを見られるメールアドレス（カンマ区切り） |
 | `DB_PATH` | SQLite ファイル（既定 `data/waffo.db`） |
 | `NODE_ENV=production` | 本番モード（ログインリンクを画面に出さない） |
 
-Stripe の Webhook エンドポイントは `/api/stripe/webhook` です。受け取るイベントは次のとおりです。
-`checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.created|updated|deleted`, `invoice.paid`, `charge.refunded`, `charge.dispute.created`
+### Waffo 決済
+
+[Waffo の Node.js SDK](https://waffo.com/docs/en/developer-docs/sdk/nodejs.md) で連携しています。
+
+- ポイント購入：単発決済（`order/create`）。決済画面から戻ったら `order/inquiry` でも結果を確認する
+- プラン：Waffo 管理のサブスク（`subscription/create`）。月額は 1か月ごと、年額は 12か月ごとに自動更新
+- 解約は `subscription/cancel`、支払い方法の変更は `subscription/manage` の管理ページ
+- 権利（ポイント・プラン）は Webhook で支払い成功を確認してから付与する。金額・通貨が注文と違えば付与しない
+
+Webhook の URL は `{BASE_URL}/api/waffo/webhook` です。注文作成時に `notifyUrl` として渡すほか、**返金とチャージバックの通知先を Waffo Dashboard で同じ URL に設定**してください。処理する通知は次のとおりです。
+
+| 通知 | 処理 |
+|---|---|
+| `PAYMENT_NOTIFICATION` | ポイント付与。サブスクの各期間の支払いなら期間を延ばして特典ポイントを付与 |
+| `SUBSCRIPTION_PERIOD_CHANGED_NOTIFICATION` | 期間ごとの最終結果。支払い成功が確認できた期間を反映 |
+| `SUBSCRIPTION_STATUS_NOTIFICATION` | 解約・終了の反映（支払い済み期間の終わりまでは利用可） |
+| `REFUND_NOTIFICATION` | 返金額の割合に応じて、その購入の有償ポイントを失効 |
+| `CHARGEBACK_NOTIFICATION` | その購入の有償ポイントを失効 |
+
+通知は順不同・重複ありで届くため、処理はすべて冪等です。処理に失敗したら `{"message":"failed"}` を返し、Waffo に再送させます。
+
+Sandbox で試すときは、ローカルを `cloudflared tunnel --url http://localhost:3000` などで公開して `BASE_URL` に設定します。サブスクの更新は、管理ページの「次回支払いを成功/失敗させる」ボタンで再現できます。
 
 ## 構成
 
@@ -41,7 +64,7 @@ src/
   billing/points.js   有償／無償ポイントの台帳
   billing/plans.js    プラン枠と課金（枠 → ポイントの順）
   billing/rewards.js  クリエイター報酬と出金申請
-  billing/stripe.js   Checkout と Webhook 処理
+  billing/waffo.js    Waffo 決済（注文・サブスク作成、Webhook 処理）
   llm/provider.js     キャラ設定からプロンプトを作り、LLM を呼ぶ
 public/               依存なしのフロントエンド（SPA）と特商法表記のひな形
 test/                 node:test によるテスト
@@ -51,5 +74,6 @@ test/                 node:test によるテスト
 
 - メール送信サービスをつないで、ログインリンクをメールで送る（`src/app.js` の TODO）
 - `public/legal.html` の〔 〕を実際の事業者情報で埋める。利用規約とプライバシーポリシーを用意する
-- 通報機能とコンテンツモデレーション（Stripe 規約への対応）
+- 通報機能とコンテンツモデレーション（決済事業者の規約への対応）
+- Waffo の本番環境：加盟店公開鍵の登録、返金・チャージバック通知 URL の設定、受け入れテスト（Waffo の Integration acceptance criteria）
 - 有償ポイントの未使用残高を監視する（資金決済法）

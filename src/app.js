@@ -6,14 +6,16 @@ import { createLoginLink, consumeLoginToken, startSession, endSession, currentUs
 import { getBalance, unusedPaidBalance, InsufficientPointsError } from './billing/points.js';
 import { getUsage, chargeFor, refundCharge, PaymentRequiredError } from './billing/plans.js';
 import { getRewardSummary, requestPayout } from './billing/rewards.js';
-import * as stripe from './billing/stripe.js';
+import { WaffoError, WaffoUnknownStatusError } from '@waffo/waffo-node';
+import * as waffoBilling from './billing/waffo.js';
+import { WaffoApiError } from './billing/waffo.js';
 import { generateReply as defaultGenerateReply } from './llm/provider.js';
 
 const VISIBILITIES = ['public', 'unlisted', 'private'];
 const MAX_MESSAGE_CHARS = 2000;
 const CHARACTER_LIMITS = { name: 50, tagline: 200, world_setting: 4000, profile: 4000, opening: 2000, tags: 200 };
 
-export function createApp({ db, generateReply = defaultGenerateReply, isProduction = process.env.NODE_ENV === 'production' }) {
+export function createApp({ db, waffo = null, generateReply = defaultGenerateReply, isProduction = process.env.NODE_ENV === 'production' }) {
   const app = new Hono();
 
   const requireUser = async (c, next) => {
@@ -63,6 +65,10 @@ export function createApp({ db, generateReply = defaultGenerateReply, isProducti
       user: { id: user.id, email: user.email, displayName: user.display_name },
       points: getBalance(db, user.id),
       usage: getUsage(db, user.id),
+      subscription: db.prepare(`
+        SELECT plan, interval, status, current_period_end AS currentPeriodEnd, pending_plan AS pendingPlan
+        FROM subscriptions WHERE user_id = ?
+      `).get(user.id) ?? null,
       rewards: getRewardSummary(db, user.id),
     });
   });
@@ -188,37 +194,53 @@ export function createApp({ db, generateReply = defaultGenerateReply, isProducti
   app.get('/api/billing/catalog', (c) =>
     c.json({ plans: PLANS, pointPacks: POINT_PACKS, pointCosts: POINT_COSTS, creatorReward: CREATOR_REWARD }));
 
-  const requireStripe = async (c, next) => {
-    if (!env.stripeSecretKey) return c.json({ error: '決済は現在準備中です（STRIPE_SECRET_KEY 未設定）' }, 503);
+  const requireWaffo = async (c, next) => {
+    if (!waffo) return c.json({ error: '決済は現在準備中です（Waffo の鍵が未設定）' }, 503);
     await next();
   };
-  app.use('/api/billing/checkout/*', requireStripe);
-  app.use('/api/billing/portal', requireStripe);
+  app.use('/api/billing/*', async (c, next) => (c.req.path === '/api/billing/catalog' ? next() : requireWaffo(c, next)));
+  app.use('/api/waffo/*', requireWaffo);
+
+  // Waffo API の失敗は 502、入力や状態の問題（加入済みなど）は 400 で返す。
+  const billingCall = async (c, fn) => {
+    try {
+      return c.json(await fn());
+    } catch (err) {
+      if (err instanceof WaffoApiError || err instanceof WaffoError || err instanceof WaffoUnknownStatusError) {
+        console.error('Waffo API call failed:', err);
+        return c.json({ error: '決済サービスとの通信に失敗しました。時間をおいてもう一度お試しください。' }, 502);
+      }
+      return c.json({ error: err.message }, 400);
+    }
+  };
 
   app.post('/api/billing/checkout/subscription', requireUser, async (c) => {
     const { plan, interval } = await c.req.json().catch(() => ({}));
     if (!PLANS[plan]?.priceJpy?.[interval] || plan === 'free') return c.json({ error: 'プランが正しくありません' }, 400);
-    return c.json({ url: await stripe.createSubscriptionCheckout(db, c.get('user'), plan, interval) });
+    return billingCall(c, async () => ({ url: await waffoBilling.createSubscriptionCheckout(db, waffo, c.get('user'), plan, interval) }));
   });
 
   app.post('/api/billing/checkout/points', requireUser, async (c) => {
     const { pack } = await c.req.json().catch(() => ({}));
     if (!POINT_PACKS[pack]) return c.json({ error: '商品が正しくありません' }, 400);
-    return c.json({ url: await stripe.createPointCheckout(db, c.get('user'), pack) });
+    return billingCall(c, async () => ({ url: await waffoBilling.createPointCheckout(db, waffo, c.get('user'), pack) }));
   });
 
-  // 解約・プラン変更・支払方法の変更は Stripe のカスタマーポータルに任せる。
-  app.post('/api/billing/portal', requireUser, async (c) =>
-    c.json({ url: await stripe.createPortalSession(db, c.get('user')) }));
+  // 決済画面から戻ったとき、Webhook の到着を待たずに結果を確認する。
+  app.post('/api/billing/payments/:id/sync', requireUser, (c) =>
+    billingCall(c, async () => ({ status: await waffoBilling.syncPayment(db, waffo, c.get('user'), c.req.param('id')) })));
 
-  app.post('/api/stripe/webhook', async (c) => {
-    let event;
-    try {
-      event = stripe.verifyWebhook(await c.req.text(), c.req.header('stripe-signature') ?? '');
-    } catch (err) {
-      return c.json({ error: `invalid signature: ${err.message}` }, 400);
-    }
-    return c.json({ result: stripe.handleStripeEvent(db, event) });
+  app.post('/api/billing/subscription/cancel', requireUser, (c) =>
+    billingCall(c, () => waffoBilling.cancelSubscription(db, waffo, c.get('user'))));
+
+  // 支払い方法の変更などは Waffo のサブスク管理ページで行う。
+  app.post('/api/billing/subscription/manage', requireUser, (c) =>
+    billingCall(c, async () => ({ url: await waffoBilling.getManagementUrl(db, waffo, c.get('user')) })));
+
+  // Waffo は HTTP 200 と署名付きの {"message":"success"|"failed"} を期待する（failed なら再送される）。
+  app.post('/api/waffo/webhook', async (c) => {
+    const result = waffoBilling.processWebhook(db, waffo, await c.req.text(), c.req.header('x-signature') ?? '');
+    return c.body(result.body, 200, { 'Content-Type': 'application/json', 'X-SIGNATURE': result.signature });
   });
 
   // ---- クリエイター報酬 ----
