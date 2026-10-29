@@ -5,7 +5,7 @@ import { createApp } from '../src/app.js';
 import { generateKeyPairSync, createSign, createVerify } from 'node:crypto';
 import { Waffo, Environment } from '@waffo/waffo-node';
 
-function setup(generateReply = async ({ chara }) => ({ text: `${chara.name}です` }), waffo = null) {
+function setup(generateReply = async ({ instructions }) => ({ text: `${instructions.match(/「(.+?)」/)[1]}です` }), waffo = null) {
   const db = openDb(':memory:');
   const app = createApp({ db, waffo, generateReply, isProduction: false });
   // Cookie を保持する簡易クライアント

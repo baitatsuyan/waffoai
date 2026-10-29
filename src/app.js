@@ -9,13 +9,22 @@ import { getRewardSummary, requestPayout } from './billing/rewards.js';
 import { WaffoError, WaffoUnknownStatusError } from '@waffo/waffo-node';
 import * as waffoBilling from './billing/waffo.js';
 import { WaffoApiError } from './billing/waffo.js';
-import { generateReply as defaultGenerateReply } from './llm/provider.js';
+import { generateReply as defaultGenerateReply, generateText as defaultGenerateText } from './llm/provider.js';
+import { PERSONAS, VOICES } from './personas.js';
+import { buildInstructions } from './prompt.js';
+import { chatToolDefs, executeTool, ToolError } from './tools.js';
+import { checkUserText, ageGate, trackPartnerUsage } from './safety.js';
+import { companionRoutes } from './routes/companion.js';
+import { voiceRoutes } from './routes/voice.js';
 
 const VISIBILITIES = ['public', 'unlisted', 'private'];
 const MAX_MESSAGE_CHARS = 2000;
 const CHARACTER_LIMITS = { name: 50, tagline: 200, world_setting: 4000, profile: 4000, opening: 2000, tags: 200 };
 
-export function createApp({ db, waffo = null, generateReply = defaultGenerateReply, isProduction = process.env.NODE_ENV === 'production' }) {
+export function createApp({
+  db, waffo = null, generateReply = defaultGenerateReply, generateText = defaultGenerateText,
+  realtime = null, isProduction = process.env.NODE_ENV === 'production',
+}) {
   const app = new Hono();
 
   const requireUser = async (c, next) => {
@@ -62,7 +71,7 @@ export function createApp({ db, waffo = null, generateReply = defaultGenerateRep
     const user = currentUser(c, db);
     if (!user) return c.json({ user: null });
     return c.json({
-      user: { id: user.id, email: user.email, displayName: user.display_name },
+      user: { id: user.id, email: user.email, displayName: user.display_name, birthDate: user.birth_date },
       points: getBalance(db, user.id),
       usage: getUsage(db, user.id),
       subscription: db.prepare(`
@@ -79,7 +88,7 @@ export function createApp({ db, waffo = null, generateReply = defaultGenerateRep
     const q = (c.req.query('q') ?? '').trim();
     const like = `%${q.replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
     const rows = db.prepare(`
-      SELECT c.id, c.name, c.tagline, c.tags, c.chat_count, u.display_name AS creator
+      SELECT c.id, c.name, c.tagline, c.tags, c.persona, c.role, c.chat_count, u.display_name AS creator
       FROM characters c JOIN users u ON u.id = c.creator_id
       WHERE c.visibility = 'public'
         AND (? = '' OR c.name LIKE ? ESCAPE '\\' OR c.tagline LIKE ? ESCAPE '\\' OR c.tags LIKE ? ESCAPE '\\')
@@ -96,7 +105,7 @@ export function createApp({ db, waffo = null, generateReply = defaultGenerateRep
   });
 
   app.get('/api/my/characters', requireUser, (c) => {
-    const rows = db.prepare('SELECT id, name, tagline, visibility, chat_count FROM characters WHERE creator_id = ? ORDER BY id DESC')
+    const rows = db.prepare('SELECT id, name, tagline, persona, role, visibility, chat_count FROM characters WHERE creator_id = ? ORDER BY id DESC')
       .all(c.get('user').id);
     return c.json({ characters: rows });
   });
@@ -105,9 +114,10 @@ export function createApp({ db, waffo = null, generateReply = defaultGenerateRep
     const input = validateCharacter(await c.req.json().catch(() => null));
     if (input.error) return c.json(input, 400);
     const r = db.prepare(`
-      INSERT INTO characters (creator_id, name, tagline, world_setting, profile, opening, tags, visibility)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(c.get('user').id, input.name, input.tagline, input.world_setting, input.profile, input.opening, input.tags, input.visibility);
+      INSERT INTO characters (creator_id, name, tagline, world_setting, profile, opening, tags, visibility, persona, role, voice, voice_speed)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(c.get('user').id, input.name, input.tagline, input.world_setting, input.profile, input.opening, input.tags, input.visibility,
+      input.persona, input.role, input.voice, input.voice_speed);
     return c.json({ id: Number(r.lastInsertRowid) }, 201);
   });
 
@@ -116,10 +126,10 @@ export function createApp({ db, waffo = null, generateReply = defaultGenerateRep
     if (input.error) return c.json(input, 400);
     const r = db.prepare(`
       UPDATE characters SET name = ?, tagline = ?, world_setting = ?, profile = ?, opening = ?, tags = ?, visibility = ?,
-        updated_at = datetime('now')
+        persona = ?, role = ?, voice = ?, voice_speed = ?, updated_at = datetime('now')
       WHERE id = ? AND creator_id = ?
     `).run(input.name, input.tagline, input.world_setting, input.profile, input.opening, input.tags, input.visibility,
-      Number(c.req.param('id')), c.get('user').id);
+      input.persona, input.role, input.voice, input.voice_speed, Number(c.req.param('id')), c.get('user').id);
     if (r.changes === 0) return c.json({ error: 'キャラが見つかりません' }, 404);
     return c.json({ ok: true });
   });
@@ -128,6 +138,8 @@ export function createApp({ db, waffo = null, generateReply = defaultGenerateRep
   app.post('/api/characters/:id/conversations', requireUser, (c) => {
     const chara = loadReadableCharacter(c.req.param('id'), c.get('user'));
     if (!chara) return c.json({ error: 'キャラが見つかりません' }, 404);
+    const gate = ageGate(c.get('user'), chara);
+    if (gate) return c.json(gate, 403);
     const r = db.prepare('INSERT INTO conversations (user_id, character_id) VALUES (?, ?)').run(c.get('user').id, chara.id);
     db.prepare('UPDATE characters SET chat_count = chat_count + 1 WHERE id = ?').run(chara.id);
     return c.json({ id: Number(r.lastInsertRowid) }, 201);
@@ -151,6 +163,10 @@ export function createApp({ db, waffo = null, generateReply = defaultGenerateRep
     if (!conv) return c.json({ error: '会話が見つかりません' }, 404);
     const chara = loadReadableCharacter(conv.character_id, user);
     if (!chara) return c.json({ error: 'このキャラは現在利用できません' }, 404);
+    const gate = ageGate(user, chara);
+    if (gate) return c.json(gate, 403);
+    if (chara.persona === 'interpreter') return c.json({ error: '通訳キャラは音声のトークでご利用ください' }, 400);
+    const safety = checkUserText(db, { userId: user.id, characterId: chara.id, text: content });
 
     // 先に課金（枠かポイント）を確定させ、生成に失敗したら取り消す。
     let receipt;
@@ -167,9 +183,24 @@ export function createApp({ db, waffo = null, generateReply = defaultGenerateRep
       .all(conv.id, CHAT_HISTORY_LIMIT - 1).reverse();
     history.push({ role: 'user', content: content.trim() });
 
+    // キャラが会話中に使う道具（記憶・予定・記録）。失敗はキャラに伝えて会話を続けさせる。
+    const runTool = (name, args) => {
+      try {
+        return executeTool(db, { userId: user.id, chara, name, args });
+      } catch (err) {
+        if (err instanceof ToolError) return { ok: false, error: err.message };
+        throw err;
+      }
+    };
     let reply;
     try {
-      reply = await generateReply({ chara, history });
+      reply = await generateReply({
+        instructions: buildInstructions(db, chara, { userId: user.id, mode: 'text' }),
+        opening: chara.opening,
+        history,
+        tools: chatToolDefs(chara),
+        runTool,
+      });
     } catch (err) {
       tx(db, () => refundCharge(db, receipt));
       console.error('generateReply failed:', err);
@@ -182,13 +213,19 @@ export function createApp({ db, waffo = null, generateReply = defaultGenerateRep
       const r = ins.run(conv.id, 'assistant', reply.text);
       return Number(r.lastInsertRowid);
     });
+    const nudge = trackPartnerUsage(db, { userId: user.id, chara, messages: 1 });
     return c.json({
       message: { id: saved, role: 'assistant', content: reply.text },
+      toolEvents: (reply.toolEvents ?? []).map((e) => ({ name: e.name, ok: e.result?.ok !== false })),
+      notices: [safety, nudge].filter(Boolean),
       charged: { via: receipt.via, points: receipt.cost ?? 0 },
       points: getBalance(db, user.id),
       usage: getUsage(db, user.id),
     });
   });
+
+  companionRoutes(app, { db, requireUser, loadReadableCharacter, generateText });
+  voiceRoutes(app, { db, requireUser, loadReadableCharacter, realtime });
 
   // ---- 課金 ----
   app.get('/api/billing/catalog', (c) =>
@@ -285,5 +322,13 @@ function validateCharacter(body) {
   if (!out.name) return { error: 'キャラ名は必須です' };
   if (!VISIBILITIES.includes(body.visibility)) return { error: '公開範囲が正しくありません' };
   out.visibility = body.visibility;
+  out.persona = body.persona ?? 'chat';
+  if (!PERSONAS[out.persona]) return { error: '役割が正しくありません' };
+  out.role = typeof body.role === 'string' ? body.role.trim().slice(0, 400) : '';
+  if (out.persona === 'other' && !out.role) return { error: '「その他」を選んだときは役割の説明を入力してください' };
+  out.voice = body.voice ?? 'marin';
+  if (!VOICES.includes(out.voice)) return { error: '声が正しくありません' };
+  out.voice_speed = Number(body.voice_speed ?? 1);
+  if (!(out.voice_speed >= 0.25 && out.voice_speed <= 1.5)) return { error: '話す速さは 0.25〜1.5 で指定してください' };
   return out;
 }

@@ -5,7 +5,7 @@ import { spendPoints, restoreSpends } from './points.js';
 export class PaymentRequiredError extends Error {}
 
 const JST_OFFSET_MS = 9 * 3600_000;
-const QUOTA_FIELD ={ chat_message: 'messagesPerPeriod', voice_generation: 'voicePerPeriod' };
+const QUOTA_FIELD = { chat_message: 'messagesPerPeriod', voice_generation: 'voicePerPeriod', voice_minute: 'voiceMinutesPerPeriod' };
 
 // 期間内のサブスク（active、または解約済みでも支払い済み期間内）があればそのプラン、なければ free。
 export function getActivePlan(db, userId, now = new Date()) {
@@ -31,6 +31,7 @@ export function getUsage(db, userId, now = new Date()) {
     periodEnd: plan.periodEnd,
     chat: { used: used.chat_message ?? 0, limit: plan.messagesPerPeriod },
     voice: { used: used.voice_generation ?? 0, limit: plan.voicePerPeriod },
+    voiceMinutes: { used: used.voice_minute ?? 0, limit: plan.voiceMinutesPerPeriod },
   };
 }
 

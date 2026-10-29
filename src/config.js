@@ -14,16 +14,26 @@ export const env = {
   waffoPublicKey: process.env.WAFFO_PUBLIC_KEY ?? '',
   waffoMerchantId: process.env.WAFFO_MERCHANT_ID ?? '',
   waffoEnvironment: process.env.WAFFO_ENV ?? 'sandbox',
+  // リアルタイム音声（OpenAI Realtime API）。未設定なら音声トークは使えず、文字のみ。
+  openaiApiKey: process.env.OPENAI_API_KEY ?? '',
+  realtimeModel: process.env.REALTIME_MODEL ?? 'gpt-realtime-2.1',
+  transcribeModel: process.env.TRANSCRIBE_MODEL ?? 'gpt-live-transcribe',
+  translateModel: process.env.TRANSLATE_MODEL ?? 'gpt-realtime-translate',
+  ttsModel: process.env.TTS_MODEL ?? 'gpt-4o-mini-tts',
+  // Web Push（キャラからのメッセージ通知）。npx web-push generate-vapid-keys で作る。
+  vapidPublicKey: process.env.VAPID_PUBLIC_KEY ?? '',
+  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY ?? '',
+  vapidSubject: process.env.VAPID_SUBJECT ?? 'mailto:support@example.com',
   adminEmails: (process.env.ADMIN_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
 };
 
 // サブスクプラン。messagesPerPeriod を超えた分はポイントで払う。
 // resetPeriod: 'day' は日次リセット、'billing_cycle' は契約期間ごと。
 export const PLANS = {
-  free: { name: 'Free', priceJpy: { month: 0 }, messagesPerPeriod: 10, voicePerPeriod: 5, resetPeriod: 'day', monthlyPoints: 0 },
-  plus: { name: 'Plus', priceJpy: { month: 980, year: 10000 }, messagesPerPeriod: 3000, voicePerPeriod: 1500, resetPeriod: 'billing_cycle', monthlyPoints: 300 },
-  premium: { name: 'Premium', priceJpy: { month: 1500, year: 15000 }, messagesPerPeriod: 6000, voicePerPeriod: 3000, resetPeriod: 'billing_cycle', monthlyPoints: 600 },
-  pro: { name: 'Pro', priceJpy: { month: 3000, year: 30000 }, messagesPerPeriod: 30000, voicePerPeriod: 7500, resetPeriod: 'billing_cycle', monthlyPoints: 1500 },
+  free: { name: 'Free', priceJpy: { month: 0 }, messagesPerPeriod: 10, voicePerPeriod: 5, resetPeriod: 'day', voiceMinutesPerPeriod: 3, monthlyPoints: 0 },
+  plus: { name: 'Plus', priceJpy: { month: 980, year: 10000 }, messagesPerPeriod: 3000, voicePerPeriod: 1500, resetPeriod: 'billing_cycle', voiceMinutesPerPeriod: 120, monthlyPoints: 300 },
+  premium: { name: 'Premium', priceJpy: { month: 1500, year: 15000 }, messagesPerPeriod: 6000, voicePerPeriod: 3000, resetPeriod: 'billing_cycle', voiceMinutesPerPeriod: 300, monthlyPoints: 600 },
+  pro: { name: 'Pro', priceJpy: { month: 3000, year: 30000 }, messagesPerPeriod: 30000, voicePerPeriod: 7500, resetPeriod: 'billing_cycle', voiceMinutesPerPeriod: 1000, monthlyPoints: 1500 },
 };
 
 // ポイント商品（有償ポイント）。1pt = 1円を基準に、高額パックほどボーナスを付ける。
@@ -37,10 +47,19 @@ export const POINT_PACKS = {
 };
 
 // 1回あたりの消費ポイント（プラン上限を超えた場合や、上限のない機能）。
+// voice_minute はリアルタイム音声1分（グループ会話は参加キャラ数ぶん）。
 export const POINT_COSTS = {
   chat_message: 1,
   voice_generation: 1,
+  voice_minute: 10,
   image_generation: 20,
+};
+
+// リアルタイム音声の上限。1回の通話の最長時間と、ハートビートが途切れたら切るまでの時間。
+export const VOICE_LIMITS = {
+  maxCallMinutes: 60,
+  heartbeatTimeoutSec: 90,
+  maxGroupMembers: 4,
 };
 
 export const SIGNUP_BONUS_POINTS = 50;

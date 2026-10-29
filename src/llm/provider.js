@@ -1,48 +1,66 @@
 import { env } from '../config.js';
 
-// キャラ設定から system プロンプトを組み立てる。設定は毎回同じ文字列になるよう並べ、
-// プロバイダ側のプロンプトキャッシュが効くようにする（入力トークン原価の削減）。
-export function buildSystemPrompt(chara) {
-  return [
-    'あなたは以下の設定のキャラクターとして、ユーザとの創作上の会話（ロールプレイ）を行います。',
-    'キャラクターになりきって返答し、設定にない事実を断定しないでください。',
-    'ナレーションは *アスタリスク* で囲み、台詞はそのまま書きます。1回の返答は300字程度までにします。',
-    '',
-    `# キャラクター名\n${chara.name}`,
-    chara.world_setting && `# 基本設定（舞台・ユーザの立場）\n${chara.world_setting}`,
-    chara.profile && `# プロフィール\n${chara.profile}`,
-  ].filter(Boolean).join('\n\n');
-}
+const MAX_TOOL_ROUNDS = 3;
 
 // OpenAI 互換の Chat Completions API を叩く。OpenRouter、BytePlus ModelArk、DeepSeek、
 // vLLM で自前ホストしたモデルなど、ベース URL を変えるだけで仕入れ先を切り替えられる。
-export async function generateReply({ chara, history }) {
+// tools を渡すと function calling を行い、runTool で実行した結果を返して続きを生成する。
+export async function generateReply({ instructions, history, opening, tools = [], runTool }) {
   const messages = [
-    { role: 'system', content: buildSystemPrompt(chara) },
-    ...(chara.opening ? [{ role: 'assistant', content: chara.opening }] : []),
+    { role: 'system', content: instructions },
+    ...(opening ? [{ role: 'assistant', content: opening }] : []),
     ...history.map((m) => ({ role: m.role, content: m.content })),
   ];
 
-  if (!env.llmBaseUrl || !env.llmApiKey) return mockReply(chara, history);
+  if (!env.llmBaseUrl || !env.llmApiKey) return mockReply(history);
 
+  const toolEvents = [];
+  for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+    const offerTools = tools.length > 0 && round < MAX_TOOL_ROUNDS;
+    const data = await chatCompletion({ messages, ...(offerTools ? { tools, tool_choice: 'auto' } : {}) });
+    const msg = data.choices?.[0]?.message ?? {};
+    const calls = msg.tool_calls ?? [];
+    if (!calls.length || !runTool) {
+      const text = msg.content?.trim();
+      if (!text) throw new Error('LLM API returned an empty reply');
+      return { text, toolEvents, usage: data.usage ?? null };
+    }
+    messages.push({ role: 'assistant', content: msg.content ?? null, tool_calls: calls });
+    for (const call of calls) {
+      const result = runTool(call.function?.name, call.function?.arguments);
+      toolEvents.push({ name: call.function?.name, result });
+      messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+    }
+  }
+  throw new Error('tool rounds exceeded');
+}
+
+// 1回だけの短い生成（キャラからの朝のメッセージ、調整の試し話など）
+export async function generateText({ instructions, prompt }) {
+  if (!env.llmBaseUrl || !env.llmApiKey) return `（開発用モック）${prompt.slice(0, 40)}`;
+  const data = await chatCompletion({ messages: [{ role: 'system', content: instructions }, { role: 'user', content: prompt }] });
+  const text = data.choices?.[0]?.message?.content?.trim();
+  if (!text) throw new Error('LLM API returned an empty reply');
+  return text;
+}
+
+async function chatCompletion(body) {
   const res = await fetch(`${env.llmBaseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.llmApiKey}` },
-    body: JSON.stringify({ model: env.llmModel, messages, max_tokens: 600, temperature: 0.9 }),
+    body: JSON.stringify({ model: env.llmModel, max_tokens: 600, temperature: 0.9, ...body }),
     signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) throw new Error(`LLM API error ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const data = await res.json();
-  const text = data.choices?.[0]?.message?.content?.trim();
-  if (!text) throw new Error('LLM API returned an empty reply');
-  return { text, usage: data.usage ?? null };
+  return res.json();
 }
 
 // API キー未設定時の開発用。課金や画面の動作確認に使う。
-function mockReply(chara, history) {
+function mockReply(history) {
   const last = history.at(-1)?.content ?? '';
   return {
-    text: `*${chara.name}は少し考えてから口を開いた*\n「${last.slice(0, 40)}」……なるほどね。（開発用モック返答です。LLM_BASE_URL と LLM_API_KEY を設定すると実際のモデルが応答します）`,
+    text: `「${last.slice(0, 40)}」……なるほどね。（開発用モック返答です。LLM_BASE_URL と LLM_API_KEY を設定すると実際のモデルが応答します）`,
+    toolEvents: [],
     usage: null,
   };
 }

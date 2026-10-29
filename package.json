@@ -15,6 +15,7 @@
   "dependencies": {
     "@hono/node-server": "2.1.5",
     "@waffo/waffo-node": "3.1.0",
-    "hono": "4.13.14"
+    "hono": "4.13.14",
+    "web-push": "3.6.7"
   }
 }

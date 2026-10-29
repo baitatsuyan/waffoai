@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   display_name TEXT NOT NULL,
+  birth_date TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -97,6 +98,11 @@ CREATE TABLE IF NOT EXISTS characters (
   opening TEXT NOT NULL DEFAULT '',
   tags TEXT NOT NULL DEFAULT '',
   visibility TEXT NOT NULL CHECK (visibility IN ('public', 'unlisted', 'private')),
+  persona TEXT NOT NULL DEFAULT 'chat',
+  role TEXT NOT NULL DEFAULT '',
+  voice TEXT NOT NULL DEFAULT 'marin',
+  voice_speed REAL NOT NULL DEFAULT 1.0,
+  tweak TEXT NOT NULL DEFAULT '',
   chat_count INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -144,6 +150,100 @@ CREATE TABLE IF NOT EXISTS point_revocations (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- 調整（プロンプトでの微修正）。user_id が NULL は作成者による公開中の調整、それ以外はそのユーザ専用。
+CREATE TABLE IF NOT EXISTS user_tweaks (
+  character_id INTEGER NOT NULL REFERENCES characters(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  text TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (character_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS tweak_versions (
+  id INTEGER PRIMARY KEY,
+  character_id INTEGER NOT NULL REFERENCES characters(id),
+  user_id INTEGER REFERENCES users(id),
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- キャラがユーザについて覚えていること。scope: private（そのキャラだけ）/ shared（全キャラで共有）。
+CREATE TABLE IF NOT EXISTS memories (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  character_id INTEGER NOT NULL REFERENCES characters(id),
+  kind TEXT NOT NULL,
+  content TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'private' CHECK (scope IN ('private', 'shared')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- 役割ごとの記録（予定・タスク・トレーニング・単語カードなど）。data は JSON。
+CREATE TABLE IF NOT EXISTS records (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  character_id INTEGER NOT NULL REFERENCES characters(id),
+  type TEXT NOT NULL,
+  data TEXT NOT NULL,
+  due_at TEXT,
+  done INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- 音声セッション。分単位で課金し、残高がなくなったら Realtime の通話を切る。
+CREATE TABLE IF NOT EXISTS voice_sessions (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  mode TEXT NOT NULL,
+  character_ids TEXT NOT NULL,
+  call_ids TEXT NOT NULL DEFAULT '[]',
+  started_at TEXT NOT NULL,
+  last_heartbeat_at TEXT NOT NULL,
+  billed_minutes INTEGER NOT NULL DEFAULT 0,
+  ended_at TEXT,
+  end_reason TEXT
+);
+
+-- キャラから届くメッセージ（朝・夜・リマインド）。時刻は日本時間の 'HH:MM'。
+CREATE TABLE IF NOT EXISTS proactive_settings (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  character_id INTEGER NOT NULL REFERENCES characters(id),
+  kind TEXT NOT NULL CHECK (kind IN ('morning', 'night')),
+  time TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_sent_date TEXT,
+  PRIMARY KEY (user_id, character_id, kind)
+);
+CREATE TABLE IF NOT EXISTS inbox (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  character_id INTEGER NOT NULL REFERENCES characters(id),
+  kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  dedupe_key TEXT UNIQUE,
+  read_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- 安全面の記録（危機的な発言の検知など）。運営が確認する。
+CREATE TABLE IF NOT EXISTS safety_events (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  character_id INTEGER,
+  kind TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, character_id);
+CREATE INDEX IF NOT EXISTS idx_records_user ON records(user_id, character_id, type);
+CREATE INDEX IF NOT EXISTS idx_inbox_user ON inbox(user_id, read_at);
 CREATE INDEX IF NOT EXISTS idx_lots_user ON point_lots(user_id, remaining);
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
 CREATE INDEX IF NOT EXISTS idx_characters_vis ON characters(visibility, chat_count);
@@ -153,8 +253,30 @@ export function openDb(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+  migrate(db);
   db.exec(SCHEMA);
   return db;
+}
+
+// 既存の DB に後から足した列を追加する（CREATE TABLE IF NOT EXISTS では列が増えないため）。
+const ADDED_COLUMNS = {
+  users: { birth_date: 'TEXT' },
+  characters: {
+    persona: "TEXT NOT NULL DEFAULT 'chat'",
+    role: "TEXT NOT NULL DEFAULT ''",
+    voice: "TEXT NOT NULL DEFAULT 'marin'",
+    voice_speed: 'REAL NOT NULL DEFAULT 1.0',
+    tweak: "TEXT NOT NULL DEFAULT ''",
+  },
+};
+function migrate(db) {
+  for (const [table, columns] of Object.entries(ADDED_COLUMNS)) {
+    const existing = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    if (!existing.length) continue; // 新規作成は SCHEMA に任せる
+    for (const [name, type] of Object.entries(columns)) {
+      if (!existing.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+    }
+  }
 }
 
 // BEGIN IMMEDIATE で書き込みロックを先に取り、ポイント二重消費などを防ぐ。
