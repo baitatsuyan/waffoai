@@ -21,7 +21,7 @@ export function dailyCounter(now = () => new Date()) {
   };
 }
 
-const clientIp = (c) => c.req.header('cf-connecting-ip') || c.req.header('true-client-ip')
+export const clientIp = (c) => c.req.header('cf-connecting-ip') || c.req.header('true-client-ip')
   || c.req.header('x-forwarded-for')?.split(',')[0].trim() || 'local';
 
 const DEMO_NOTE = '# お試し中\nこれはログイン前のお試し会話です。予定の登録や記録などの道具はまだ使えません。頼まれたら内容にはしっかり答えたうえで、「登録すると実際に記録して、当日にお知らせできる」と短く添える。返答は200字程度まで。';
@@ -31,7 +31,7 @@ export function demoRoutes(app, { db, generateReply, generateText, realtime, use
   const demoCharacters = () => {
     const owner = officialOwnerId(db);
     return OFFICIAL.filter((o) => o.demo).map((o) => {
-      const c = db.prepare('SELECT id, name, persona, tagline, profile, opening, voice, voice_speed FROM characters WHERE creator_id = ? AND name = ?').get(owner ?? -1, o.name);
+      const c = db.prepare('SELECT id, name, persona, tagline, profile, opening, voice, voice_speed, image FROM characters WHERE creator_id = ? AND name = ?').get(owner ?? -1, o.name);
       return c && { ...c, prompts: o.demo.prompts };
     }).filter(Boolean);
   };

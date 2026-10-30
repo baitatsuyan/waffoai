@@ -11,7 +11,7 @@
 | 画面 | 内容 |
 |---|---|
 | メインページ（`#/`・ログイン前） | サービスの紹介、標準の相棒（ミサキ＝勉強の先生、黒崎＝執事）とのお試し会話（登録なし・台本または LLM）、役割の一覧 |
-| 相棒をつくる（`#/make`） | 役割を選び、名前・性格（候補ボタン／おまかせ生成）・関係・声を決める。ログイン前でもつくれる |
+| 相棒をつくる（`#/make`） | 役割を選び、名前・性格（候補ボタン／おまかせ生成）・関係・声・見た目（AI で立ち絵の候補をつくって選ぶ）を決める。ログイン前でもつくれる |
 | 新規登録（`#/signup`） | つくった相棒を確認して、呼び名とメールアドレスで登録。相棒の下書きはログインリンクと一緒にサーバに預け、リンクを開くと作られる |
 | マイページ（`#/`・ログイン後） | 登録直後は「ようこそ」と使い方。わたしの相棒、今日と明日の予定・タスク、届いたメッセージ |
 | さがす（`#/discover`） | 公式の相棒とみんなのキャラ。気に入ったら「相棒にする」 |
@@ -71,6 +71,8 @@ API キーがなくても動きます。LLM も `OPENAI_API_KEY` も未設定な
 | `RESEND_API_KEY` / `MAIL_FROM` | ログインリンクのメール送信（[Resend](https://resend.com)）。本番ではこれがないとログインできない |
 | `OPENAI_API_KEY` | リアルタイム音声（OpenAI Realtime API）、声のお試し（TTS）。`LLM_*` が未設定なら文字の会話も OpenAI（`gpt-6-luna`）で行う |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 文字の会話を別の OpenAI 互換 API にするとき。例：OpenRouter は `https://openrouter.ai/api/v1`。OpenAI のままモデルだけ変えるなら `LLM_MODEL` だけ |
+| `IMAGE_MODEL` / `IMAGE_QUALITY` | 相棒の立ち絵（OpenAI の画像生成）。既定は `gpt-image-2.5-flare` / `medium`。絵は DB と同じディスクの `images/` に保存 |
+| `IMAGE_DAILY_TOTAL` | 絵づくりの全体の1日の上限（既定 40回。1回で2枚） |
 | `LLM_REASONING_EFFORT` | OpenAI の推論モデルの考える量（既定 `low`。`none` にするとさらに速い） |
 | `REALTIME_MODEL` / `TRANSCRIBE_MODEL` / `TRANSLATE_MODEL` / `TTS_MODEL` | 既定は `gpt-realtime-2.1` / `gpt-live-transcribe` / `gpt-realtime-translate` / `gpt-4o-mini-tts` |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Web Push（`npx web-push generate-vapid-keys` で作る）。なければ受信箱のみ |
@@ -78,7 +80,7 @@ API キーがなくても動きます。LLM も `OPENAI_API_KEY` も未設定な
 | `WAFFO_PRIVATE_KEY` | 加盟店の秘密鍵（Base64 の PKCS8 DER、または PEM）。リクエストと Webhook 応答の署名に使う |
 | `WAFFO_PUBLIC_KEY` | Waffo の公開鍵（Dashboard の Integration に表示）。Webhook の署名検証に使う |
 | `WAFFO_ENV` | `sandbox`（既定）または `production` |
-| `ADMIN_EMAILS` | 運営用レポートを見られるメールアドレス（カンマ区切り） |
+| `ADMIN_EMAILS` | 運営のメールアドレス（カンマ区切り）。運営用レポートと、設定画面の「公式の相棒とギャラリーの絵をつくる」が使える |
 | `DB_PATH` | SQLite ファイル（既定 `data/aibow.db`） |
 | `NODE_ENV=production` | 本番モード（ログインリンクを画面に出さない） |
 
@@ -142,6 +144,9 @@ src/
   routes/companion.js 記憶・記録・調整・お知らせ・通知の API
   routes/home.js      相棒（user_companions）とマイページの API
   routes/demo.js      ログイン前のお試し会話・読み上げ・おまかせ生成
+  routes/images.js    相棒の立ち絵づくりと配信、運営用の一括生成
+  images.js           画像生成（OpenAI）と保存
+  gallery.js          公式の相棒とギャラリーの見た目の設定
   seed.js             公式の相棒
   llm/provider.js     LLM 呼び出し（function calling 対応）
 public/

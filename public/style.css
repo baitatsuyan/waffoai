@@ -359,3 +359,16 @@ button.play:hover { background: #e0e9ff; }
   .g-card .row { flex-direction: column; align-items: stretch; }
   .g-card .lp-btn.small { white-space: normal; }
 }
+
+/* 相棒の絵 */
+img.avatar { object-fit: cover; object-position: 50% 15%; background: var(--pc, var(--border)); }
+.orb.has-img { background-size: cover; background-position: 50% 15%; }
+.orb.has-img span { visibility: hidden; }
+.portrait-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 20%; }
+.portrait.has-img .portrait-initial, .portrait.has-img .ic { display: none; }
+.portrait.has-img::after { background: linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, .25)); }
+.portrait-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 160px)); gap: 10px; margin: 10px 0; }
+.portrait-pick { padding: 0; border: 2px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); aspect-ratio: 2 / 3; }
+.portrait-pick img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.portrait-pick[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+.chip-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }

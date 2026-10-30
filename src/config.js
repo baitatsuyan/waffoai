@@ -34,6 +34,9 @@ export const env = {
   transcribeModel: process.env.TRANSCRIBE_MODEL ?? 'gpt-live-transcribe',
   translateModel: process.env.TRANSLATE_MODEL ?? 'gpt-realtime-translate',
   ttsModel: process.env.TTS_MODEL ?? 'gpt-4o-mini-tts',
+  // 相棒の絵（OpenAI の画像生成）
+  imageModel: process.env.IMAGE_MODEL || 'gpt-image-2.5-flare',
+  imageQuality: process.env.IMAGE_QUALITY || 'medium',
   // Web Push（キャラからのメッセージ通知）。npx web-push generate-vapid-keys で作る。
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY ?? '',
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY ?? '',
@@ -73,6 +76,14 @@ export const POINT_COSTS = {
 };
 
 // リアルタイム音声の上限。1回の通話の最長時間と、ハートビートが途切れたら切るまでの時間。
+// 相棒の絵づくりの1日の回数（1回で2枚）。費用がかかるので、ログイン前は IP ごと、ログイン後はユーザーごと、さらに全体で上限を置く。
+export const IMAGE_LIMITS = {
+  perIp: 3,
+  perUser: 10,
+  total: Number(process.env.IMAGE_DAILY_TOTAL ?? 40),
+  candidates: 2,
+};
+
 export const VOICE_LIMITS = {
   maxCallMinutes: 60,
   heartbeatTimeoutSec: 90,

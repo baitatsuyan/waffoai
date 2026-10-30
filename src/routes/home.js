@@ -26,7 +26,7 @@ export function addCompanion(db, userId, characterId) {
 
 function listCompanions(db, userId) {
   return db.prepare(`
-    SELECT c.id, c.name, c.tagline, c.persona, c.role, c.voice, uc.added_at, uc.last_used_at,
+    SELECT c.id, c.name, c.tagline, c.persona, c.role, c.voice, c.voice_speed, c.image, uc.added_at, uc.last_used_at,
       (SELECT m.content FROM messages m JOIN conversations cv ON cv.id = m.conversation_id
         WHERE cv.user_id = uc.user_id AND cv.character_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_message,
       (SELECT COUNT(*) FROM inbox i WHERE i.user_id = uc.user_id AND i.character_id = c.id AND i.read_at IS NULL) AS unread
@@ -43,7 +43,7 @@ export function homeRoutes(app, { db, requireUser, loadReadableCharacter }) {
     const owner = officialOwnerId(db);
     // まだ相棒がいない人向けのおすすめ（公式の相棒）
     const suggested = db.prepare(`
-      SELECT id, name, tagline, persona, role FROM characters
+      SELECT id, name, tagline, persona, role, image FROM characters
       WHERE creator_id = ? AND visibility = 'public' AND id NOT IN (SELECT character_id FROM user_companions WHERE user_id = ?)
       ORDER BY id
     `).all(owner ?? -1, user.id);

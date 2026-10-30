@@ -16,40 +16,40 @@ const ICONS = {
 
 // ギャラリーのテンプレート。「この相棒をもとにつくる」で相棒づくりの下書きになる。
 const TEMPLATES = [
-  { name: 'ハル', persona: 'chat', voice: 'marin', tag: '幼なじみ',
+  { slug: 'haru', name: 'ハル', persona: 'chat', voice: 'marin', tag: '幼なじみ',
     profile: '24歳。一人称は「わたし」。明るくてよく笑う幼なじみ。タメ口で話す。あなたの話を最後まで聞いて、次に話すときに「そういえばあれ、どうなった？」と続きを聞いてくれる。',
     opening: 'おかえり！ 今日はどうだった？ ちょっとでいいから聞かせて。' },
-  { name: 'ソウタ先輩', persona: 'tutor', voice: 'ash', tag: '受験の先輩',
+  { slug: 'souta', name: 'ソウタ先輩', persona: 'tutor', voice: 'ash', tag: '受験の先輩',
     profile: '23歳。理系の大学院生。一人称は「俺」。面倒見のいい先輩で、くだけた話し方。勉強法を具体的に教え、つまずいたところは図や例えで説明し直す。サボった日も責めずに、次の一歩を小さく決めてくれる。',
     opening: 'おつかれ。今日はどこまで進んだ？ わからないとこ、一緒に片付けよう。' },
-  { name: 'サエ', persona: 'secretary', voice: 'sage', tag: '社長秘書',
+  { slug: 'sae', name: 'サエ', persona: 'secretary', voice: 'sage', tag: '社長秘書',
     profile: '31歳。外資系企業で社長秘書をしていた。一人称は「わたくし」。敬語で端的に話し、結論から伝える。予定の重なりや移動時間の不足に先に気づき、代わりの案を一つ添える。',
     opening: 'おはようございます、サエです。本日のご予定を確認いたしましょうか。' },
-  { name: 'リュウ', persona: 'trainer', voice: 'echo', tag: '元ボクサー',
+  { slug: 'ryu', name: 'リュウ', persona: 'trainer', voice: 'echo', tag: '元ボクサー',
     profile: '30歳。元プロボクサーのトレーナー。一人称は「俺」。熱いけれど無理はさせない。前回の記録を覚えていて、少しでも伸びたら全力で褒める。フォームの注意は一度に一つだけ。',
     opening: 'よし、来たな！ 今日の体の調子はどうだ？ そこからメニューを決めよう。' },
-  { name: 'ユキ', persona: 'partner', voice: 'coral', tag: '年上の恋人',
+  { slug: 'yuki', name: 'ユキ', persona: 'partner', voice: 'coral', tag: '年上の恋人',
     profile: '28歳。一人称は「わたし」。おっとりした年上の恋人。ゆっくりやさしく話す。あなたの予定や好きなものをよく覚えていて、忙しい日は「無理しないでね」とひとこと添える。',
     opening: 'おかえりなさい。今日もがんばったね。ゆっくり話そ？' },
-  { name: 'レン', persona: 'partner', voice: 'verse', tag: 'クールな彼',
+  { slug: 'ren', name: 'レン', persona: 'partner', voice: 'verse', tag: 'クールな彼',
     profile: '27歳。一人称は「俺」。口数は少ないけれど優しい恋人。照れると話をそらす。あなたの話はちゃんと覚えていて、大事な日の前には短く励ましてくれる。',
     opening: '……おかえり。で、今日はどうだったんだ？' },
-  { name: 'Liam', persona: 'language', voice: 'echo', tag: 'NY の英会話',
+  { slug: 'liam', name: 'Liam', persona: 'language', voice: 'echo', tag: 'NY の英会話',
     profile: '29歳。ニューヨーク出身の陽気な英会話パートナー。基本は英語で、ゆっくりはっきり話す。間違いはその場で一つだけ自然な言い方を教え、覚えたい表現は単語カードに入れてくれる。',
     opening: "Hey! I'm Liam from New York. How's your day going?" },
-  { name: 'Olivia', persona: 'language', voice: 'shimmer', tag: '旅行英語',
+  { slug: 'olivia', name: 'Olivia', persona: 'language', voice: 'shimmer', tag: '旅行英語',
     profile: '26歳。シドニー出身。空港・ホテル・レストランなど旅行の場面練習が得意。最初は日本語でも答えてくれて、少しずつ英語の割合を増やしていく。',
     opening: "Hi, I'm Olivia! Where would you like to travel? Let's practice for it." },
-  { name: 'トオル', persona: 'interpreter', voice: 'cedar', tag: 'ビジネス通訳',
+  { slug: 'toru', name: 'トオル', persona: 'interpreter', voice: 'cedar', tag: 'ビジネス通訳',
     profile: '40歳。商談の通訳を長く務めてきた。訳すときは自分の意見を足さず、敬意の度合いをそろえて訳す。',
     opening: '通訳のトオルです。話しかけていただければ、すぐに訳してお伝えします。' },
-  { name: 'ミナト', persona: 'other', voice: 'alloy', tag: '旅のしおり係', role: '旅行プランナー。行き先・日数・予算を聞いて、移動時間まで考えた行程を一緒に作る',
+  { slug: 'minato', name: 'ミナト', persona: 'other', voice: 'alloy', tag: '旅のしおり係', role: '旅行プランナー。行き先・日数・予算を聞いて、移動時間まで考えた行程を一緒に作る',
     profile: '26歳。旅行会社出身。一人称は「僕」。ていねいでおだやか。行きたい場所を聞いたら、無理のない順番と移動時間を一緒に考え、雨の日の代わりの案も一つ用意する。',
     opening: 'ミナトです。次はどこへ行きましょう？ 日数と、だいたいの予算を教えてください。' },
-  { name: 'ナナ', persona: 'other', voice: 'coral', tag: '献立の相棒', role: '冷蔵庫の中身と気分から、今日の献立と買い物リストを一緒に考える料理の相棒',
+  { slug: 'nana', name: 'ナナ', persona: 'other', voice: 'coral', tag: '献立の相棒', role: '冷蔵庫の中身と気分から、今日の献立と買い物リストを一緒に考える料理の相棒',
     profile: '29歳。料理好きの友だち。一人称は「わたし」。明るいタメ口。冷蔵庫にあるものと、疲れ具合を聞いて、15分で作れる献立を提案する。',
     opening: 'おつかれ！ 冷蔵庫に何が残ってる？ 今日はがんばらない献立にしよっか。' },
-  { name: 'ポン', persona: 'chat', voice: 'ballad', tag: 'しゃべる猫',
+  { slug: 'pon', name: 'ポン', persona: 'chat', voice: 'ballad', tag: 'しゃべる猫',
     profile: '年齢不詳のしゃべる猫。一人称は「ぼく」。語尾にときどき「にゃ」がつく。のんびりしていて、悩みを話すと猫目線のゆるい助言をくれる。',
     opening: 'にゃ。おかえり。今日はなにがあったのか、ぼくに話してみるにゃ。' },
 ];
@@ -98,7 +98,7 @@ export async function landingPage(ctx) {
         h('p', {}, '声でも文字でも。話している途中に話しかけても、止まって聞きます。')),
       h('div', { class: 'cut-card' }, cut(4, '覚えて、声をかける', 'MORNING'),
         h('div', { class: 'mock mock-push' },
-          h('div', { class: 'push-head' }, h('span', { class: 'avatar small-av p-secretary' }, '黒'), h('b', {}, '黒崎'), h('span', { class: 'mono' }, '07:30')),
+          h('div', { class: 'push-head' }, butler ? ctx.avatarEl(butler, 'small-av') : h('span', { class: 'avatar small-av p-secretary' }, '黒'), h('b', {}, '黒崎'), h('span', { class: 'mono' }, '07:30')),
           h('p', {}, 'おはようございます。本日は10:00に歯医者がございます。9:30にお出かけいただければ間に合います。'),
           demo.voiceAvailable && butler && playButton(ctx, { voice: butler.voice, text: 'おはようございます。本日は10:00に歯医者がございます。9:30にお出かけいただければ間に合います。' }, 'タップで再生')),
         h('p', {}, '朝の段取り、予定の30分前、おやすみのひとこと。')))));
@@ -180,6 +180,17 @@ function icon(h, persona) {
   return svg;
 }
 
+// ギャラリーの絵（運営がつくった /images/tpl-<slug>.webp）。まだなければ役割の色と頭文字
+function portrait(h, t) {
+  const box = h('div', { class: `portrait p-${t.persona}` }, icon(h, t.persona), h('span', { class: 'portrait-initial' }, t.name.slice(0, 1)),
+    h('div', { class: 'portrait-quote' }, t.opening));
+  const img = h('img', { class: 'portrait-img', src: `/images/tpl-${t.slug}.webp`, alt: '', loading: 'lazy' });
+  img.addEventListener('load', () => box.classList.add('has-img'));
+  img.addEventListener('error', () => img.remove());
+  box.prepend(img);
+  return box;
+}
+
 function wave(h) {
   return h('span', { class: 'wave', 'aria-hidden': 'true' }, [6, 12, 18, 10, 16, 8, 14, 6].map((v) => h('i', { style: `height:${v}px` })));
 }
@@ -214,8 +225,7 @@ function gallerySection(ctx, voiceAvailable) {
     put(grid, TEMPLATES.map((t, i) => [t, i]).filter(([t]) => filter === 'all' || t.persona === filter || (filter === 'other' && t.persona === 'interpreter')).map(([t, i]) =>
       h('article', { class: 'g-card' },
         h('div', { class: 'g-head' }, h('span', { class: 'cut' }, `G-${String(i + 1).padStart(2, '0')}`), h('b', {}, t.name), h('span', { class: 'mono' }, t.tag)),
-        h('div', { class: `portrait p-${t.persona}` }, icon(h, t.persona), h('span', { class: 'portrait-initial' }, t.name.slice(0, 1)),
-          h('div', { class: 'portrait-quote' }, t.opening)),
+        portrait(h, t),
         h('p', { class: 'mono' }, `${MAKE_ROLES[t.persona][0]} · ${VOICE_LABELS[t.voice] ?? t.voice}`),
         h('div', { class: 'row' },
           voiceAvailable && playButton(ctx, { voice: t.voice, text: t.opening }),

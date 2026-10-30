@@ -38,6 +38,10 @@ async function api(path, opts = {}) {
 const yen = (n) => `${n.toLocaleString()}円`;
 const personaLabel = (c) => (c.persona === 'other' ? (c.role || 'その他').slice(0, 20) : meta?.personas[c.persona]?.label ?? '');
 const initial = (name) => [...name][0] ?? '?';
+// 相棒のアイコン。絵があれば絵、なければ役割の色と頭文字
+const avatarEl = (c, size = '') => (c.image
+  ? h('img', { class: `avatar ${size} p-${c.persona}`, src: c.image, alt: '', loading: 'lazy' })
+  : h('span', { class: `avatar ${size} p-${c.persona}` }, initial(c.name)));
 
 async function refreshMe() {
   me = await api('/api/me');
@@ -95,7 +99,7 @@ function birthDateForm(onDone) {
 // ---- 画面：さがす ----
 
 const characterCard = (c) => h('a', { class: 'card', href: `#/c/${c.id}` },
-  h('div', { class: 'card-head' }, h('span', { class: `avatar p-${c.persona}` }, initial(c.name)), h('h3', {}, c.name)),
+  h('div', { class: 'card-head' }, avatarEl(c), h('h3', {}, c.name)),
   h('div', {}, c.tagline),
   h('div', { class: 'tags' }, c.persona !== 'chat' && h('span', { class: 'chip' }, personaLabel(c)), ` ${c.official ? '公式' : `by ${c.creator}`}`));
 
@@ -145,7 +149,7 @@ async function playSpeech({ voice, speed = 1, text }) {
 // ---- 画面：メインページ（ログイン前） ----
 
 function landingPage() {
-  return renderLanding({ h, put, api, me, MAKE_ROLES, VOICE_LABELS, playSpeech, demoPanel, saveDraft });
+  return renderLanding({ h, put, api, me, MAKE_ROLES, VOICE_LABELS, playSpeech, demoPanel, saveDraft, avatarEl });
 }
 
 // メインページのお試し会話。キャラごとに会話を保ち、切り替えても続きから話せる。
@@ -170,7 +174,7 @@ function demoPanel({ characters, voiceAvailable }) {
     } }, '▶ 声で聞く'));
   const render = () => {
     put(tabs, characters.map((c) => h('button', { role: 'tab', class: 'demo-tab', 'aria-selected': c === current ? 'true' : 'false', onclick: () => { current = c; render(); } },
-      h('span', { class: `avatar p-${c.persona}` }, initial(c.name)), h('span', {}, h('b', {}, c.name), h('small', {}, personaLabel(c))))));
+      avatarEl(c), h('span', {}, h('b', {}, c.name), h('small', {}, personaLabel(c))))));
     const log = logs.get(current.id);
     put(chat, h('p', { class: 'muted small demo-tagline' }, current.tagline), bubble(current, 'assistant', current.opening),
       log.map((m) => m.role === 'cta' ? m.node : bubble(current, m.role, m.content)));
@@ -248,7 +252,7 @@ async function homePage(params) {
   };
   const talkable = companions.filter((c) => c.persona !== 'interpreter');
   const welcome = made && h('section', { class: 'panel welcome' },
-    h('div', { class: 'card-head' }, h('span', { class: `avatar big p-${made.persona}` }, initial(made.name)),
+    h('div', { class: 'card-head' }, avatarEl(made, 'big'),
       h('div', {}, h('h1', {}, `ようこそ${me.user.nickname ? `、${me.user.nickname}さん` : ''}！`),
         h('p', { class: 'muted' }, `${made.name}（${personaLabel(made)}）があなたを待っていました。さっそく話しかけてみましょう。`))),
     h('div', { class: 'row' },
@@ -281,7 +285,7 @@ async function homePage(params) {
         : h('p', { class: 'muted' }, '予定やタスクはありません。秘書に「明日10時に歯医者」と話しかけると登録されます。')),
     h('div', { class: 'row spread' }, h('h2', {}, 'わたしの相棒'), h('span', {}, h('a', { href: '#/make' }, '＋ つくる'), '　', h('a', { href: '#/discover' }, 'さがす'))),
     h('div', { class: 'grid' }, companions.map((c) => h('div', { class: 'card companion' },
-      h('a', { class: 'card-head', href: `#/c/${c.id}` }, h('span', { class: `avatar p-${c.persona}` }, initial(c.name)),
+      h('a', { class: 'card-head', href: `#/c/${c.id}` }, avatarEl(c),
         h('div', {}, h('h3', {}, c.name, c.unread ? h('span', { class: 'badge' }, String(c.unread)) : null), h('div', { class: 'tags' }, personaLabel(c)))),
       h('p', { class: 'last' }, c.last_message ? c.last_message.slice(0, 60) : c.tagline),
       h('div', { class: 'row' },
@@ -299,7 +303,7 @@ async function onboardingPage() {
   const render = () => put(grid, suggested.map((c) => h('button', {
     class: 'card pick', 'aria-pressed': picked.has(c.id) ? 'true' : 'false',
     onclick: () => { picked.has(c.id) ? picked.delete(c.id) : picked.add(c.id); render(); },
-  }, h('div', { class: 'card-head' }, h('span', { class: `avatar p-${c.persona}` }, initial(c.name)), h('div', {}, h('h3', {}, c.name), h('div', { class: 'tags' }, personaLabel(c)))),
+  }, h('div', { class: 'card-head' }, avatarEl(c), h('div', {}, h('h3', {}, c.name), h('div', { class: 'tags' }, personaLabel(c)))),
   h('p', {}, c.tagline))));
   render();
   const msg = h('p');
@@ -349,7 +353,7 @@ async function characterPage(id) {
     } catch (err) { put(msg, h('p', { class: 'error' }, err.message)); }
   };
   return [
-    h('div', { class: 'card-head' }, h('span', { class: `avatar big p-${c.persona}` }, initial(c.name)),
+    h('div', { class: 'card-head' }, avatarEl(c, 'big'),
       h('div', {}, h('h1', {}, c.name), h('div', { class: 'tags' }, c.persona !== 'chat' && h('span', { class: 'chip' }, personaLabel(c)), ` ${c.official ? '公式' : `by ${c.creator}`}`))),
     h('p', {}, c.tagline),
     h('div', { class: 'row' },
@@ -624,6 +628,35 @@ async function makePage(id, params) {
   };
   const chips = (list) => h('div', { class: 'chips' }, list.map((t) => h('button', { class: 'chip-btn', onclick: () => addChip(t) }, `＋${t}`)));
   const voice = voiceFields(c, () => opening.value);
+  // 見た目：画風と説明から立ち絵の候補をつくり、選んだ絵を相棒の顔にする
+  let image = c.image || '';
+  let style = 'anime';
+  const STYLE_LABELS = { anime: 'アニメ風', soft: '水彩風', real: 'リアル風', chibi: 'ミニキャラ' };
+  const styles = h('div', { class: 'chips' });
+  const renderStyles = () => put(styles, Object.entries(STYLE_LABELS).map(([k, label]) =>
+    h('button', { class: 'chip-btn', 'aria-pressed': style === k ? 'true' : 'false', onclick: () => { style = k; renderStyles(); } }, label)));
+  renderStyles();
+  const looks = h('textarea', { maxlength: 300, placeholder: '例：肩までの茶色い髪、丸い眼鏡、ベージュのカーディガン' });
+  const candidates = h('div', { class: 'portrait-picks' });
+  const imageMsg = h('span', { class: 'muted small' });
+  const renderPicks = (list) => put(candidates, list.map((url) => h('button', {
+    class: 'portrait-pick', 'aria-pressed': image === url ? 'true' : 'false',
+    onclick: () => { image = image === url ? '' : url; renderPicks(list); },
+  }, h('img', { src: url, alt: '候補の絵' }))));
+  let picks = image ? [image] : [];
+  renderPicks(picks);
+  const drawPortraits = async (btn) => {
+    btn.disabled = true;
+    imageMsg.textContent = '描いています…（30秒ほどかかります）';
+    try {
+      const r = await api('/api/make/portraits', { method: 'POST', body: { persona, name: name.value, profile: profile.value, looks: looks.value, style } });
+      picks = [...r.images, ...picks].slice(0, 6);
+      if (!image) image = r.images[0];
+      renderPicks(picks);
+      imageMsg.textContent = '気に入った絵を選んでください。もう一度つくることもできます。';
+    } catch (err) { imageMsg.textContent = err.message; }
+    btn.disabled = false;
+  };
   const msg = h('p');
   // おまかせ：役割・名前・いま書いてあるキーワードから、性格の文章と最初のひとことを書いてもらう
   const suggestMsg = h('span', { class: 'muted small' });
@@ -643,6 +676,7 @@ async function makePage(id, params) {
       name: name.value.trim(), persona, role: role.value, profile: profile.value, world_setting: relation.value, opening: opening.value,
       tagline: c.tagline || `わたしだけの${MAKE_ROLES[persona][0]}`, tags: c.tags ?? '', visibility: c.visibility ?? 'private',
       ...voice.values(),
+      image,
     };
     if (!body.name) { put(msg, h('span', { class: 'error' }, '名前を入れてください')); name.focus(); return; }
     if (persona === 'other' && !body.role.trim()) { put(msg, h('span', { class: 'error' }, '何を手伝ってもらうかを書いてください')); role.focus(); return; }
@@ -676,6 +710,11 @@ async function makePage(id, params) {
     field('あなたとの関係・呼び方（なくてもOK）', relation),
     field('最初のひとこと（なくてもOK）', opening),
     h('h2', {}, '3. 声'), voice.nodes,
+    h('h2', {}, '4. 見た目（なくてもOK）'),
+    h('label', {}, '絵のタッチ'), styles,
+    h('label', {}, '髪型・服装・雰囲気'), looks,
+    h('div', { class: 'row' }, h('button', { class: 'secondary', onclick: (e) => drawPortraits(e.currentTarget) }, '🎨 絵をつくる（2枚）'), imageMsg),
+    candidates,
     msg,
     !me.user && h('p', { class: 'muted small' }, '最後に無料登録をすると、この相棒がマイページで待っています。'),
     h('p', {}, h('button', { class: 'big', onclick: (e) => save(e.currentTarget) }, id ? '保存する' : me.user ? 'この相棒と話してみる' : 'この相棒で登録する（無料）'),
@@ -722,7 +761,7 @@ async function talkPage(params) {
         history.replaceState(null, '', `#/talk?ids=${selected.join(',')}`);
         renderPicker(); renderStage(); renderControls();
       },
-    }, h('span', { class: `avatar p-${c.persona}` }, initial(c.name)), c.name)));
+    }, avatarEl(c), c.name)));
   };
 
   const orbs = new Map();
@@ -730,7 +769,7 @@ async function talkPage(params) {
     orbs.clear();
     put(stage, ...(members().length ? members().map((c) => {
       const caption = h('div', { class: 'caption' });
-      const orb = h('div', { class: `orb p-${c.persona}` }, h('span', {}, initial(c.name)));
+      const orb = h('div', { class: `orb p-${c.persona}${c.image ? ' has-img' : ''}`, style: c.image ? `background-image:url(${c.image})` : false }, h('span', {}, initial(c.name)));
       const wrap = h('div', { class: 'seat' }, orb, h('div', { class: 'seat-name' }, c.name, h('span', { class: 'muted' }, ` ${personaLabel(c)}`)), caption);
       orbs.set(c.id, { orb, caption, wrap });
       return wrap;
@@ -1047,7 +1086,7 @@ async function settingsPage() {
       h('h2', {}, 'わたしの相棒'),
       companions.length
         ? h('ul', { class: 'list' }, companions.map((c) => h('li', {},
-          h('span', { class: `avatar p-${c.persona}` }, initial(c.name)), h('a', { href: `#/c/${c.id}` }, c.name), h('span', { class: 'muted' }, personaLabel(c)),
+          avatarEl(c), h('a', { href: `#/c/${c.id}` }, c.name), h('span', { class: 'muted' }, personaLabel(c)),
           h('button', { class: 'secondary small', onclick: async () => { await api(`/api/companions/${c.id}`, { method: 'DELETE' }); route(); } }, '相棒から外す'))))
         : h('p', { class: 'muted' }, 'まだいません。'),
       h('p', { class: 'muted' }, '外しても、会話や覚えていることは残ります。また相棒にすれば続きから話せます。'),
@@ -1065,11 +1104,30 @@ async function settingsPage() {
       h('div', { class: 'row' }, h('div', { style: 'flex:1' }, birth), h('button', { class: 'secondary', onclick: saveBirth }, '保存'), birthMsg),
       h('p', {}, h('a', { href: '#/notes' }, '覚えていること・記録の確認と削除（ノート）')),
       h('p', {}, h('button', { class: 'secondary', onclick: logout }, 'ログアウト'))),
+    me.user.isAdmin && adminPortraitsPanel(),
     h('section', { class: 'panel muted-panel' },
       h('h2', {}, 'クリエイターの方へ'),
       h('p', { class: 'muted' }, '自分でキャラをつくって公開し、話された分に応じて報酬を受け取れます（準備中の機能を含みます）。'),
       h('a', { href: '#/creator' }, 'クリエイター画面へ')),
   ];
+}
+
+// 運営用：公式の相棒とギャラリーの絵をつくる（OpenAI の画像生成。1枚数円〜十数円）
+function adminPortraitsPanel() {
+  const status = h('p', { class: 'muted small' });
+  const show = (job) => {
+    status.textContent = job.running ? `つくっています… ${job.done} / ${job.total}`
+      : job.total ? `完了 ${job.done} / ${job.total}${job.errors.length ? `（失敗 ${job.errors.length}：${job.errors[0]}）` : ''}` : 'まだつくった絵はありません（つくり済みのものは作り直しません）';
+    if (job.running) setTimeout(() => api('/api/admin/portraits').then(show).catch(() => {}), 3000);
+  };
+  api('/api/admin/portraits').then(show).catch(() => {});
+  return h('section', { class: 'panel' },
+    h('h2', {}, '運営：公式の相棒とギャラリーの絵'),
+    h('p', { class: 'muted small' }, '公式の相棒6人とメインページのギャラリー12人の立ち絵を、まだないものだけつくります。数分かかります。'),
+    h('div', { class: 'row' },
+      h('button', { class: 'secondary', onclick: async () => show(await api('/api/admin/portraits', { method: 'POST', body: {} })) }, 'まだない絵をつくる'),
+      h('button', { class: 'secondary small', onclick: async () => { if (confirm('すべての絵を作り直しますか？')) show(await api('/api/admin/portraits', { method: 'POST', body: { force: true } })); } }, 'すべて作り直す')),
+    status);
 }
 
 // ---- 画面：クリエイター（キャラの作成・公開・報酬） ----
@@ -1090,7 +1148,7 @@ async function creatorPage() {
     h('div', { class: 'row spread' }, h('h2', {}, 'つくったキャラ'), h('a', { class: 'button', href: '#/creator/new' }, 'キャラをつくる')),
     characters.length
       ? h('div', { class: 'grid' }, characters.map((c) => h('a', { class: 'card', href: `#/creator/edit/${c.id}` },
-        h('div', { class: 'card-head' }, h('span', { class: `avatar p-${c.persona}` }, initial(c.name)), h('h3', {}, c.name)),
+        h('div', { class: 'card-head' }, avatarEl(c), h('h3', {}, c.name)),
         h('div', { class: 'tags' }, `${personaLabel(c)} ・ ${{ public: '公開', unlisted: '限定公開', private: '非公開' }[c.visibility]} ・ 会話 ${c.chat_count}`))))
       : h('p', { class: 'muted' }, 'まだありません。'),
     h('h2', {}, '報酬'),
@@ -1138,7 +1196,7 @@ function signupPage() {
     draft && h('ol', { class: 'progress' }, h('li', { class: 'done' }, '相棒をつくる'), h('li', { class: 'on' }, '無料登録'), h('li', {}, 'マイページで話す')),
     draft
       ? h('section', { class: 'panel made' },
-        h('div', { class: 'card-head' }, h('span', { class: `avatar big p-${draft.persona}` }, initial(draft.name)),
+        h('div', { class: 'card-head' }, avatarEl(draft, 'big'),
           h('div', {}, h('p', { class: 'muted small' }, 'あなただけの相棒ができました'), h('h1', {}, draft.name), h('div', { class: 'tags' }, MAKE_ROLES[draft.persona]?.[0]))),
         h('div', { class: 'bubble assistant' }, greeting),
         h('div', { class: 'row' },

@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS characters (
   voice TEXT NOT NULL DEFAULT 'marin',
   voice_speed REAL NOT NULL DEFAULT 1.0,
   tweak TEXT NOT NULL DEFAULT '',
+  image TEXT NOT NULL DEFAULT '', -- 相棒の絵（/images/xxx.webp）
   chat_count INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -279,6 +280,7 @@ const ADDED_COLUMNS = {
     voice: "TEXT NOT NULL DEFAULT 'marin'",
     voice_speed: 'REAL NOT NULL DEFAULT 1.0',
     tweak: "TEXT NOT NULL DEFAULT ''",
+    image: "TEXT NOT NULL DEFAULT ''",
   },
 };
 function migrate(db) {

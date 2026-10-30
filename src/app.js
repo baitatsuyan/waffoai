@@ -18,6 +18,8 @@ import { companionRoutes } from './routes/companion.js';
 import { voiceRoutes } from './routes/voice.js';
 import { homeRoutes, touchCompanion, addCompanion } from './routes/home.js';
 import { demoRoutes } from './routes/demo.js';
+import { imageRoutes } from './routes/images.js';
+import { isStoredImage } from './images.js';
 import { officialOwnerId, OFFICIAL_EMAIL } from './seed.js';
 import { createMailer, loginMail } from './mail.js';
 
@@ -96,7 +98,7 @@ export function createApp({
     const user = currentUser(c, db);
     if (!user) return c.json({ user: null });
     return c.json({
-      user: { id: user.id, email: user.email, displayName: user.display_name, nickname: user.nickname, birthDate: user.birth_date },
+      user: { id: user.id, email: user.email, displayName: user.display_name, nickname: user.nickname, birthDate: user.birth_date, isAdmin: env.adminEmails.includes(user.email) },
       points: getBalance(db, user.id),
       usage: getUsage(db, user.id),
       subscription: db.prepare(`
@@ -121,7 +123,7 @@ export function createApp({
     const q = (c.req.query('q') ?? '').trim();
     const like = `%${q.replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
     const rows = db.prepare(`
-      SELECT c.id, c.name, c.tagline, c.tags, c.persona, c.role, c.chat_count, u.display_name AS creator,
+      SELECT c.id, c.name, c.tagline, c.tags, c.persona, c.role, c.image, c.chat_count, u.display_name AS creator,
         c.creator_id = ? AS official
       FROM characters c JOIN users u ON u.id = c.creator_id
       WHERE c.visibility = 'public'
@@ -165,12 +167,13 @@ export function createApp({
   app.put('/api/characters/:id', requireUser, async (c) => {
     const input = validateCharacter(await c.req.json().catch(() => null));
     if (input.error) return c.json(input, 400);
+    // image を送らなかったときは今の絵のまま
     const r = db.prepare(`
       UPDATE characters SET name = ?, tagline = ?, world_setting = ?, profile = ?, opening = ?, tags = ?, visibility = ?,
-        persona = ?, role = ?, voice = ?, voice_speed = ?, updated_at = datetime('now')
+        persona = ?, role = ?, voice = ?, voice_speed = ?, image = COALESCE(?, image), updated_at = datetime('now')
       WHERE id = ? AND creator_id = ?
     `).run(input.name, input.tagline, input.world_setting, input.profile, input.opening, input.tags, input.visibility,
-      input.persona, input.role, input.voice, input.voice_speed, Number(c.req.param('id')), c.get('user').id);
+      input.persona, input.role, input.voice, input.voice_speed, input.image ?? null, Number(c.req.param('id')), c.get('user').id);
     if (r.changes === 0) return c.json({ error: 'キャラが見つかりません' }, 404);
     return c.json({ ok: true });
   });
@@ -285,6 +288,7 @@ export function createApp({
   homeRoutes(app, { db, requireUser, loadReadableCharacter });
   companionRoutes(app, { db, requireUser, loadReadableCharacter, generateText });
   voiceRoutes(app, { db, requireUser, loadReadableCharacter, realtime });
+  imageRoutes(app, { db, requireUser });
   demoRoutes(app, {
     db, generateReply, generateText, realtime,
     useScript: !(env.llmBaseUrl && env.llmApiKey) && generateReply === defaultGenerateReply,
@@ -376,10 +380,10 @@ export function createApp({
 
 function insertCharacter(db, userId, input) {
   const r = db.prepare(`
-    INSERT INTO characters (creator_id, name, tagline, world_setting, profile, opening, tags, visibility, persona, role, voice, voice_speed)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO characters (creator_id, name, tagline, world_setting, profile, opening, tags, visibility, persona, role, voice, voice_speed, image)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(userId, input.name, input.tagline, input.world_setting, input.profile, input.opening, input.tags, input.visibility,
-    input.persona, input.role, input.voice, input.voice_speed);
+    input.persona, input.role, input.voice, input.voice_speed, input.image ?? '');
   return Number(r.lastInsertRowid);
 }
 
@@ -437,6 +441,8 @@ function validateCharacter(body) {
   if (out.persona === 'other' && !out.role) return { error: '「その他」を選んだときは役割の説明を入力してください' };
   out.voice = body.voice ?? 'marin';
   if (!VOICES.includes(out.voice)) return { error: '声が正しくありません' };
+  if (body.image !== undefined && body.image !== '' && !isStoredImage(body.image)) return { error: '画像が正しくありません' };
+  if (body.image !== undefined) out.image = body.image;
   out.voice_speed = Number(body.voice_speed ?? 1);
   if (!(out.voice_speed >= 0.25 && out.voice_speed <= 1.5)) return { error: '話す速さは 0.25〜1.5 で指定してください' };
   return out;
